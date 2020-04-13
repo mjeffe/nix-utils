@@ -1,0 +1,11 @@
+#! /bin/ksh
+# $Id: rr.sh 18 2011-03-09 21:47:56Z mjeffe $
+# Another bug-ugly utility from Matt's code archive.
+
+if [ $# -lt 1 ]; then
+   echo "Usage: `basename $0` NUMBER"
+   echo "Description: returns a random number between 1 and NUMBER"
+   exit 1
+fi
+
+expr $RANDOM % $1 + 1

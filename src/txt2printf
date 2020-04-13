@@ -1,0 +1,116 @@
+#!/usr/local/bin/perl
+# ------------------------------------------------------------------------
+# $Id: txt2printf 848 2010-10-13 19:11:22Z mjeffe $
+#
+# Another bug-ugly utility from Matt's code archive.
+#
+# converts plain txt file to a series of C printf statements
+# ------------------------------------------------------------------------
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+   $Getopt::Long::ignorecase = 1;
+
+my $this = `basename $0`;
+chomp($this);
+
+
+# ------------------------------------------------------------------------
+sub usage() {
+
+   print <<EOF;
+
+Usage
+   $this [optional options] < infile > outfile
+
+Options
+   -p s,f,p    Parameter definition.  $this will search for string s in the
+               input text, and replace them with the formatting symbol f, and
+               set the corresponding parameter name p.  Just try it, you'll
+               figure it out...
+   -i n        Number of spaces printf should indent output
+   -s s        Use fprintf instead of printf and set the output stream to s
+   -h          print this help message
+
+Description
+   $this will take a plain text file and output a series of printf statements
+   which should produce the input text.  It tries to preserve indentation and
+   blank lines.
+
+EOF
+
+   exit(1);
+}
+
+
+
+my @parms;
+my %opts = ();
+GetOptions(\%opts,
+   'parm|p=s',
+   'stream|s=s',
+   'indent|i=i',
+   'help|h') or die $!;
+
+usage() if ($opts{help});
+
+$opts{indent} = 0 unless ( $opts{indent} );
+
+my $stream = "printf(\"";
+if ( $opts{stream} ) {
+   $stream = "fprintf(" . $opts{stream} . ",\"";
+}
+
+my $buf = "";
+while ( my $line = <STDIN> ) {
+   chomp($line);
+   my $parmlist = ",";
+
+   # mind you, order is important here!
+   $line =~ s/\\/\\\\/g;   # escape \
+   $line =~ s/"/\\"/g;     # escape "
+
+   $buf = $stream . " " x $opts{indent};
+
+   if ( $opts{parm} ) {
+      my ($parmstr, $parmfmt, $parmvar) = split(/,/, $opts{parm});
+
+      # capture the number of times the string was replaced
+      my $subs = $line =~ s/$parmstr/$parmfmt/g;
+      $parmlist .= "$parmvar," x $subs;
+      $parmlist =~ s/,$//;   # trim off the trailing comma
+   }
+
+   $buf .= $line . '\n' . "\"$parmlist);\n";
+   print $buf;
+}
+
+1;
+
+
+
+=dodah
+   # Use this if we want to accecpt multiple -p options.  Unfortunately,
+   # getting the correct parm to line up with the correct substitution
+   # get's tricky.  I'm saving this cuz I didn't want to loose it.
+
+   # you also need to add this to the GetOpts call
+   #'parm|p=s@',
+
+
+   if ( $opts{parm} ) {
+      my $parmref = $opts{parm};
+      while (my $p = <@$parmref>) {
+         my ($parmstr, $parmfmt, $parmvar) = split(/,/, $p);
+
+         # capture the number of times the string was replaced
+         my $subs = $line =~ s/$parmstr/$parmfmt/g;
+         $parmlist .= "$parmvar," x $subs;
+      }
+      $parmlist =~ s/,$//;   # trim off the trailing comma
+   }
+=cut
+
+

@@ -1,0 +1,358 @@
+#!/bin/bash
+# ------------------------------------------------------------------------
+# $Id: iota 735 2008-09-11 19:27:17Z mjeffe $
+#
+# Another bug-ugly utility from Matt's code archive.
+#
+# I/O Test Assistant - used to perform I/O testing on Linux.
+#
+# NOTE:
+#  The standard dd that comes with most Linux distros is a fairly old
+#  version that does not do several things that are very useful for
+#  I/O testing.  To compile the latest version of dd, get the
+#  coreutils package from www.gnu.org untar it and do the following:
+#
+#     cd coreutils<version>/
+#
+#     ./configure --enable-no-install-program=arch,base64,basename,cat,chcon,chgrp,chmod,chown,chroot,cksum,comm,cp,csplit,cut,date,df,dir,dircolors,dirname,du,echo,env,expand,expr,factor,false,fmt,fold,groups,head,hostid,hostname,id,install,join,kill,link,ln,logname,ls,md5sum,mkdir,mkfifo,mknod,mktemp,mv,nice,nl,nohup,od,paste,pathchk,pinky,pr,printenv,printf,ptx,pwd,readlink,rm,rmdir,runcon,seq,sha1sum,sha224sum,sha256sum,sha384sum,sha512sum,shred,shuf,sleep,sort,split,stat,stty,su,sum,sync,tac,tail,tee,test,touch,tr,true,tsort,tty,uname,unexpand,uniq,unlink,uptime,users,vdir,wc,who,whoami,yes
+#
+#     make
+#
+#     cp src/dd $HOME/bin/gdd
+#
+#
+# TODO:
+#   - build a way to record aggregate I/O rate during a -a test
+#   - look for dd version rather than gdd vs dd.  If only older version of dd
+#     is available, then we need to do some other things to record I/O rates
+#     since old version does not report this.
+#   - build in a way to automatically gather all mounts on external controllers
+# ------------------------------------------------------------------------
+
+
+VERSION=0.01
+
+# defaults
+this=`basename $0`
+test_file_name=`basename $0 .sh`.dat
+bs=8192k
+cnt=2000
+rw=READ
+directio=      # default to buffered I/O
+agg=           # default to single mount test
+full=          # default is not full testing
+cleanup=
+
+
+# this needs some work.  Standard dd doesn't report bytes/sec, so it's kind of
+# useless withou some other tools
+DD=`which gdd 2>/dev/null`
+if [ ! -x "$DD" ]; then
+   echo "Can't locate executable version of gdd, looking for dd..."
+   DD=`which dd 2>/dev/null`
+   if [ ! -x "$DD" ]; then
+      echo "Can't locate executable version of dd"
+      exit 1
+   fi
+fi
+
+
+# ------------------------------------------------------------------------
+usage() {
+   cat <<EOF | less --quit-at-eof
+
+Description:
+   $this is used to test I/O performance.
+
+Usage:
+   $this [-acdfhvw] [-b block_size] [-n block_count] [-x /path/to/dd] mount1 [mount2 ...] 
+
+Options:
+   -a                Aggregate test (default is single file test at a time)
+                     NOTE that during an aggregate test, this script currently
+                     has no way to record the aggregate I/O rate.  You will
+                     need to run an additional utility at the same time as the
+                     aggregate test, such as iostat or xosview, and observe the
+                     overall I/O rate yourself.
+   -b block_size     Block size to read or write (man dd for size modifiers)
+   -c                Clean up all test files
+   -d                Use direct I/O and bypass the OS buffer cache
+   -f                Perform all possible tests (direct, buffered, single,
+                     aggregate, read, write, etc).  Note that when using this
+                     option, several other options do not make sense and will
+                     be ignored.
+   -h                Display this help message
+   -n N              Number of blocks to read or write
+   -v                Display version information
+   -w                Do a write test (default is read test)
+   -x /path/to/dd    The full path to the dd or gdd executable.  By default
+                     $this searches your path for an executable named gdd, then
+                     dd if gdd is not found.  The "Default" section below shows
+                     what was found.
+
+   mountN            Writeable directory on a mount point.  If more than one
+                     is supplied, each will be tested in the order supplied on
+                     the command line.  If the -a flag is used, all mount
+                     points will be tested together.  Note, that it's easy
+                     to use the shell's file expansion capabilities.  For example:
+
+                        $this /u0?/stage
+
+Defaults:
+   dd                $DD
+   block size        $bs
+   count             $cnt
+   use OS buffered I/O
+   test one mount point at a time
+
+
+EOF
+
+exit 1
+}
+
+
+# ------------------------------------------------------------------------
+print_report_header() {
+
+   echo "==========================================================================="
+   echo "Report for I/O test on `hostname`"
+   echo "Run on `date`"
+   echo
+   echo "Server information:"
+   echo
+   uname -a
+   echo
+   cat /etc/redhat-release
+   echo
+   df -k
+   echo
+   echo "==========================================================================="
+   echo
+}
+
+# ------------------------------------------------------------------------
+print_test_header() {
+   echo
+   echo "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+   echo "Test parameters:"
+   echo "   test type      $rw"
+   echo "   path to dd     $DD"
+   echo "   block size     $bs"
+   echo "   block count    $cnt"
+   if [ "$directio" ]; then
+      echo "   Using direct I/O to bypass the OS buffer cache"
+   else
+      echo "   Allowing the OS to buffer I/O"
+   fi
+   if [ "$agg" ]; then
+      echo "   Performing an aggregate test of all mount points at once"
+   else
+      echo "   Testing one mount point at a time"
+   fi
+   echo "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+   echo
+}
+
+
+# ------------------------------------------------------------------------
+dotest() {
+   fname=$1/$test_file_name
+
+   cmd=
+   if [ "$rw" = 'WRITE' ]; then
+      cmd="$DD if=/dev/zero of=$fname bs=$bs count=$cnt"
+      if [ "$directio" ]; then
+         cmd="$cmd oflag=direct"
+      fi
+   elif [ "$rw" = 'READ' ]; then
+      cmd="$DD if=$fname of=/dev/null bs=$bs count=$cnt"
+      if [ "$directio" ]; then
+         cmd="$cmd iflag=direct"
+      fi
+   else
+      echo "invalid rw parameter: $rw"
+      exit 1
+   fi
+
+   msg="
+--------------------------------
+   test file   : $fname
+   command     : $cmd
+"
+
+   if [ "$agg" ]; then
+      echo "$msg" > ${fname}.log
+      (time $cmd) >> ${fname}.log 2>&1 &
+   else
+      echo "$msg"
+      time $cmd
+   fi
+}
+
+# ------------------------------------------------------------------------
+print_logs() {
+   if [ $agg ]; then
+      echo
+      for f in $mounts; do
+         cat $f/${test_file_name}.log
+      done
+      echo
+   fi
+}
+
+
+# ----------------- MAIN -------------------------------------------------
+while getopts b:n:x:dfawcvh opt
+do
+   case $opt in
+      a) agg=Y;;
+      b) bs=$OPTARG;;
+      c) cleanup=Y;;
+      n) cnt=$OPTARG;;
+      d) directio=Y;;
+      f) full=Y;;
+      w) rw=WRITE;;
+      x) DD=$OPTARG
+         if [ ! -x $DD ]; then
+            echo "-x option $DD is not an executable version of dd..."
+            exit 1
+         fi
+         ;;
+      h) usage ;;
+      v) echo "$this: Version $VERSION"; exit 0;;
+      *) echo "Unknown option ($opt)..."
+         exit 1
+         ;;
+   esac
+done
+
+shift $(($OPTIND - 1))
+if [ "$#" -eq 0 ]; then
+   echo
+   echo "$this: no mount points specified.  Try the -h option for a help message"
+   exit 1
+fi
+
+# grab all files on command line
+mounts="$*"
+
+# this is just a cleanup run
+if [ "$cleanup" ]; then
+   echo
+   echo "cleaning up test files..."
+   for f in $mounts; do
+      echo "  removing $f/$test_file_name"
+      rm $f/$test_file_name
+      if [ -f $f/${test_file_name}.log ]; then
+         echo "  removing $f/${test_file_name}.log"
+         rm $f/${test_file_name}.log
+      fi
+   done
+   echo
+   exit
+fi
+
+# kill everything if logout or ctrl-C is pressed
+trap "echo killing dd processes; killall $DD; exit" 1 2
+
+#
+# run the tests
+#
+
+print_report_header
+
+# as long as this is not a full test, we can wrap things up
+if [ ! "$full" ]; then
+   print_test_header
+   for f in $mounts; do
+      dotest $f
+   done
+   wait  # in case this is an aggregate test
+   print_logs
+
+   exit
+fi
+
+# This is a full test, so we have to ignore most of the input parameters and
+# just perform every test we know of
+
+# write, buffered, not aggregate
+rw=WRITE
+directio=
+agg=
+print_test_header
+for f in $mounts; do
+   dotest $f
+done
+
+# write, buffered, aggregate
+rw=WRITE
+directio=
+agg=Y
+print_test_header
+for f in $mounts; do
+   dotest $f
+done
+wait
+
+# write, direct, not aggregate
+rw=WRITE
+directio=Y
+agg=
+print_test_header
+for f in $mounts; do
+   dotest $f
+done
+
+# write, direct, aggregate
+rw=WRITE
+directio=Y
+agg=Y
+print_test_header
+for f in $mounts; do
+   dotest $f
+done
+wait
+
+# read, buffered, not aggregate
+rw=READ
+directio=
+agg=
+print_test_header
+for f in $mounts; do
+   dotest $f
+done
+
+# read, buffered, aggregate
+rw=READ
+directio=
+agg=Y
+print_test_header
+for f in $mounts; do
+   dotest $f
+done
+wait
+
+# read, direct, not aggregate
+rw=READ
+directio=Y
+agg=
+print_test_header
+for f in $mounts; do
+   dotest $f
+done
+
+# read, direct, aggregate
+rw=READ
+directio=Y
+agg=Y
+print_test_header
+for f in $mounts; do
+   dotest $f
+done
+wait
+
+
+
+

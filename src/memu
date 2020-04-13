@@ -1,0 +1,45 @@
+#!/usr/bin/bash
+# ------------------------------------------------------------------------
+# $Id$
+#
+# Another bug-ugly utility from Matt's code archive.
+#
+# calculates the amount of memory used by userid $1
+# ------------------------------------------------------------------------
+
+
+ps auxw | grep "$1" | sort -k 6,6n | 
+awk '
+BEGIN {
+   print "PID\tRSS\tCOMMAND";
+}
+
+{
+   total += $6 / 1024; 
+   if($18) {
+      end="..."
+   } 
+   else {
+      end=""
+   } 
+   #print $2 "\t" $6 "\t" $11 " " $12 " " $13 " " $14 " " $15 " " $16 " " $17 " " end
+
+   printf("%s\t%s\t",$2,$6);
+   # print all remaining fields as the command
+   for ( i = 11; i <= NF; i++) {
+      printf("%s ", $i);
+   }
+   printf("\n");
+   
+} 
+
+END {
+   print "---------------------"; 
+   print "\t" int(total) "MB\tTOTAL"
+}'
+
+if [ -z "$1" ]; then
+   echo
+   echo No user specified, total calculated for all processes!
+   echo usage: `basename $0` [user]
+fi

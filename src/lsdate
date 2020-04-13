@@ -1,0 +1,138 @@
+#!/usr/bin/perl
+# ------------------------------------------------------------------------
+# $Id: lsdate 848 2010-10-13 19:11:22Z mjeffe $
+#
+# Another bug-ugly utility from Matt's code archive.
+#
+# Finds files with mtimes matching date criteria
+# ------------------------------------------------------------------------
+
+use strict;
+use warnings;
+
+#use File::stat;
+#use Time::Local;
+use Getopt::Long;
+   $Getopt::Long::ignorecase = 1;
+
+my $this = `basename $0`;
+chomp($this);
+
+
+# ------------------------------------------------------------------------
+sub usage() {
+
+#usage $this -y year [-m month] [-d day] [-h hour] [-m minute] [-s second]
+# could to add --gt_date and --lt_date and use parse_date
+   print <<EOF;
+Usage
+   $this -y year [-d]
+   $this -g N [-d]
+   $this -l N [-d]
+
+Options
+   -y, --year year     The year portion of the date
+   -d, --dirs          Also report on directories
+   -g N, --gt N        Files with last modified date greater than N days ago.
+   -l N, --lt N        Files with last modified date less than N days ago.
+
+Description
+   $this will print to stdout all files in the current directory whose file
+   mtime (last modified time) matches the input options.  The most common usage
+   is for archiving log files in older implementations of ECR that have all log
+   files in the same directory.  For example:
+
+   $this -y 2009 | xargs -i mv '{}' logs_archive_2009/
+
+   This will list all files in the current directory that were created in 2009,
+   and move them to the logs_archive_2009 directory.
+
+   You should use either -y OR the -g, -l options, but not both.  If you use
+   -g and -l in the same call, you can effectively build "between" type logic.
+   Note that $this does not do any range checking so it's up to you to make
+   sure the ranges make sense.  
+
+   Note that the -g and -l are calculated at exactly 24 hours + the time that
+   $this is run - it does not round off to midnight.
+
+EOF
+
+   exit(1);
+}
+
+
+# ------------------------------------------------------------------------
+# UNUSED - could be used to supply a string of date information
+# ------------------------------------------------------------------------
+sub parse_date($) {
+   my ($str) = @_;
+   my %months = (Jan=> 0, Feb=> 1, Mar=> 2, Apr=> 3, May=>4, Jun=> 5, Jul=> 6, 
+                 Aug=> 7, Sep=> 8, Sep=> 8, Oct=> 9, Nov=> 10, Dec=> 11);
+
+   use Time::Local;
+   # Parse the date in standard format: Fri Jun 30 11:07:39 2000
+   my ($day, $month, $mday, $time, $year) = split(" ", $str);
+   my ($hour,$min,$sec) = split(":",$time);
+   return timelocal($sec,$min,$hour,$mday,$months{$month},$year);
+}
+
+
+# ------------------------------------------------------------------------
+# MAIN
+# ------------------------------------------------------------------------
+
+my %opts = ();
+#GetOptions(\%opts,'year|y:i','month|m:i','day|d:i','hour|h:i','minute|m:i',
+#         'second|s:i' ,'date:s','help|?:s') or die $!;
+GetOptions(\%opts,'year|y:i','dirs|d', 'lt|l:i', 'gt|g:i','help|?:s') or die $!;
+
+usage() if ($opts{help} || $opts{h});
+usage() unless ( exists $opts{year} || exists $opts{lt} || exists $opts{gt} );
+if ( exists $opts{year} && (exists $opts{lt} || exists $opts{gt}) ) {
+   print STDERR "$this: must not use both -y and one of -l or -g\n";
+   exit 1;
+}
+
+
+my $now = time;
+my $lt_time;
+my $gt_time;
+$lt_time = $now - (60 * 60 * 24 * $opts{lt}) if ( exists $opts{lt} );
+$gt_time = $now - (60 * 60 * 24 * $opts{gt}) if ( exists $opts{gt} );
+#print "now: $now, lt_time: $lt_time, gt_time: $gt_time\n";
+
+opendir(DIR, ".") or die $!;
+
+my $printit = 0;
+
+while (my $file = readdir(DIR)) {
+   next if (!defined($opts{d}) && -d $file);
+
+   #my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks) = stat($file);
+   my $mtime = (stat($file))[9];   # just need mtime from the stat structure
+   my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime($mtime);
+   $year += 1900;
+
+   if ( exists $opts{year} ) {
+      $printit = 1 if ($year == $opts{year});
+   }
+   elsif ( exists $opts{gt} && exists $opts{lt} ) {
+      $printit = 1 if ( $mtime < $gt_time && $mtime > $lt_time );
+   }
+   elsif ( exists $opts{gt} ) {
+      $printit = 1 if ( $mtime < $gt_time );
+   }
+   elsif ( exists $opts{lt} ) {
+      $printit = 1 if ( $mtime > $lt_time );
+   }
+   else {
+      print STDERR "$this: internal error - should never get here...\n";
+      exit 1;
+   }
+
+   print "$file\n" if ($printit);
+   $printit = 0;
+}
+
+1;
+

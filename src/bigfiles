@@ -1,0 +1,47 @@
+#!/bin/bash
+# Another bug-ugly utility from Matt's code archive.
+
+this=`basename $0`
+
+# default is aprox 1/2 Gig
+min_file_size=512000000
+units=c
+
+print_usage () {
+   if [ $# -lt 1 ]; then
+      echo
+      echo "$this locates files larger than the min_file_size, using the find"
+      echo "command.  Default minimum file size is $min_file_size bytes."
+      echo
+      echo "usage: $this [-c min_bytes | -k min_kilobytes | -g min_gigabytes] dir_name"
+      exit 1
+   fi
+}
+
+while getopts h?k:c:g: option
+do
+   case $option in
+      c) units=c
+         min_file_size=$OPTARG;;
+      k) units=k
+         min_file_size=$OPTARG;;
+      g) units=c
+         min_file_size=`expr $OPTARG \* 1073741824`;;
+    h|?) print_usage;;
+      *) echo "$this: indvalid options..."
+         print_usage;;
+   esac
+done
+
+shift $(($OPTIND - 1))
+if [ "$#" -eq 0 ]
+then
+   echo
+   echo "$this: no directory name specified..."
+   print_usage 
+fi
+
+
+
+find $1 -type f -size +${min_file_size}${units} -ls
+

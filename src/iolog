@@ -1,0 +1,828 @@
+#!/usr/local/bin/perl
+# ---------------------------------------------------------------------------
+# $Id: iolog 622 2005-07-06 20:41:02Z mjeffe $
+#
+# Another bug-ugly utility from Matt's code archive.
+#
+# TODO: 
+#   - Add LOG_EVENT as the plot title
+#   - Add override options for plot defaults
+#   - Add option --log_event or --title to --plot.  This would override, or
+#     substitue the LOG_EVENT in the log file.
+#   - for --start append the pid to the --pid_file so that if --start gets
+#     called several times with the same pid_file it won't lose a currently
+#     running pid.  --stop will need to kill all pids in a file.  May not want
+#     this behavior, but currently the pid_file gets overwritten and the old
+#     iostat will run forever.
+#   - Make it work with both iostat version 4.0 as well as 5.0
+# ---------------------------------------------------------------------------
+
+use strict;
+use warnings;
+use File::Basename;
+use Getopt::Long;
+
+
+my $this = basename($0);
+my %opts = ();
+my ($debug, $log_event, $pid_file, $log_file, $interval, $action);
+my @plot_type; # types of plots to generate
+my @trash;     # files to clean up after processing
+my $datetime_fmt = '%Y:%m:%d-%H:%M:%S';
+my $label_datetime_fmt = '%d-%b-%Y\n%H:%M:%S';
+my $cvs_id = '$Id: iolog 622 2005-07-06 20:41:02Z mjeffe $';
+my $mrj_iostat = 0;         # indicates custom version of iostat
+
+
+#
+# defaults
+#
+my $TMP_DIR = "/tmp";
+my $OUTPUT_DIR = ".";
+
+# try to find gnuplot 
+my $GNUPLOT = dirname($0) . "/gnuplot";
+if ( ! -x $GNUPLOT ) {
+   chomp($GNUPLOT = `which gnuplot`);
+}
+if ( ! -x $GNUPLOT) {
+   # we will check later, it may be passed in as a command line parameter.
+   $GNUPLOT = "";
+}
+
+# try to find iostat
+my $IOSTAT = dirname($0) . "/iostat";
+if ( ! -x $IOSTAT ) {
+   chomp($IOSTAT = `which iostat`);
+}
+if ( ! -x $IOSTAT ) {
+   # we will check later, it may be passed in as a command line parameter.
+   $IOSTAT = "";
+}
+
+
+# ---------------------------------------------------------------------------
+# print usage message and exit
+sub show_usage() {
+   print STDERR <<"EOF";
+
+USAGE:
+   $this --help | --version | --start <OPTIONS> | --stop <OPTIONS> | --plot <OPTIONS>
+
+   See OPTION DESCRIPTION below for OPTIONS to each parameter.
+
+DESCRIPTION:
+   $this logs iostat(1) output on each cciss device on the machine.  Each time
+   it's called with the --start option.  When called with the --stop option
+   It will stop the logging process for the given pid_file_name.  When
+   called with the --plot option it will generate .png graphs using gnuplot.
+
+OPTION DESCRIPTIONS:
+   --help                Prints this screen, and exits.
+
+   --version             Prints the cvs version id, and exits.
+
+   --start               Starts a loging process using iostat.
+
+      Required parms:
+         --pid_file <pid_file_name>    File where the PID of the iostat process
+                                       will be saved.
+         --log_file <log_file_name>    File where iostat output will be saved.
+
+      Optional parms:
+         --interval n                  The amount of time in seconds between
+                                       each report (see iostat man page).  
+                                       Default is 60.
+         --log_event                   Text string which will be added to the
+                                       log header and graph title.
+         --iostat <path/to/iostat>     Give full path to the iostat executable.
+   
+      Example:
+         $this --start --pid_file foo.pid --log_file foo.log --interval 2 --log_event "Testing acxiread"
+
+   --stop               Stops a loging process.
+
+      Required parms:
+         --pid_file <pid_file_name>    File with the PID of the iostat process.
+
+      Example:
+         $this --stop --pid_file
+
+   --plot <all> | <csv of plot types>
+
+      Required parms:
+         NOTE: The x axis of all plots is Time.
+         all                           Produce all defined plot types.
+         util                          Plot of device utilization (see iostat
+                                       man page) and cpu \% busy.
+         cpu                           Plot of different cpu stats.
+         rwmb                          Plot of read plus write throughput
+                                       (Mb/s), per device, and cpu \% busy.
+         totrw                         Plot of total I/O throughput on the
+                                       machine (Mb/s) and cpu \% busy.
+         rw                            Plot of total reads, total writes
+                                       (Mb/s) and cpu \% busy.
+         --log_file <log_file_name>    File with iostat output.
+
+      Optional parms:
+         --output_dir <path/to/dir>    Directory to put plot image files.
+                                       Default is current directory.
+         --temp_dir <path/to/dir>      Directory to use for creation of temp
+                                       files.  Default it /tmp.
+         --gnuplot <path/to/gnuplot>   Give full path to the gnuplot binary.
+   
+      Example:
+         $this --plot util,cpu,rwmb --log_file foo.log
+   
+   --parse              Used for development.  Parses the iostat output log
+                        into a wide, flat space delimited file, with data
+                        for cpu and each device in one record.  This is an
+                        appropriate format for feeding to gnuplot.
+
+      Required parms:
+         --log_file <log_file_name>    File with iostat output.
+
+      Optional parms:
+         --temp_dir <path/to/dir>      Directory where parsed file will be
+                                       created.  Default it /tmp.
+   
+      Example:
+         $this --parse --log_file foo.log --temp_dir .
+
+EXAMPLE USAGE:
+   # Start logging before starting foo process
+   $this --start --pid_file ~/iolog/foo.pid --log_file ~/iolog/foo.log \\
+      --interval 2 --log_event \"Monitor I/O during foo process\"
+
+   # After foo process has finished stop log
+   $this --stop --pid_file ~/iolog/foo.pid
+
+   # generate plots for cpu usage and total io throughput to see how the
+   # machine behaved during the foo process
+   $this --plot cpu,totrw --log_file ~/iolog/foo.log \\
+      --output_dir ~/public_html/io
+
+NOTES
+   $this currently only works with iostat version 5.0.  If used with my hacked
+   version of iostat, it will produce date and time in the reports, thereby
+   allowing reports to span midnight.
+
+   Report any comments or bugs to Matt Jeffery - mjeffe\@acxiom.com
+   cvs $cvs_id
+
+EOF
+
+   exit 1;
+}
+
+
+# ---------------------------------------------------------------------------
+# check and set default command line parms
+sub check_parms() {
+   if ( defined($opts{"debug"}) ) {
+      $debug = $opts{"debug"};
+   } else {
+      $debug = 0;
+   } 
+
+   if ( defined($opts{"temp_dir"}) ) {
+      if ( -d $opts{"temp_dir"} && -w $opts{"temp_dir"} ) {
+         $TMP_DIR = $opts{"temp_dir"};
+      } else {
+         print STDERR "$this: Unable to write to temp_dir ", $opts{"temp_dir"}, "\n";
+         print STDERR "$this: Using $TMP_DIR instead.\n";
+      }
+   }
+
+   if ( defined($opts{"output_dir"}) ) {
+      if ( -d $opts{"output_dir"} && -w $opts{"output_dir"} ) {
+         $OUTPUT_DIR = $opts{"output_dir"};
+      } else {
+         die "$this: Unable to write to output_dir ", $opts{"output_dir"}, "\n";
+         #print STDERR "$this: Using $OUTPUT_DIR instead.\n";
+      }
+   }
+
+   if ( defined($opts{"gnuplot"}) ) {
+      if ( -x $opts{"gnuplot"} ) {
+         $GNUPLOT = $opts{"gnuplot"};
+      } else {
+         die "$this: --gnuplot parm: ", $opts{"gnuplot"}, " is not executable.\n";
+      }
+   }
+
+   if ( defined($opts{"iostat"}) ) {
+      if ( -x $opts{"iostat"} ) {
+         $IOSTAT = $opts{"iostat"};
+      } else {
+         die "$this: --iostat parm: ", $opts{"iostat"}, " is not executable.\n";
+      }
+   }
+   if ( -x $IOSTAT ) {
+      # now try to determine if it's the version I altered, which allows me to pass in a date
+      # format to the -t parameter.
+      open(DF, "$IOSTAT -V 2>&1 |");
+      while (my $line = <DF>) {
+         $mrj_iostat = 1 if $line =~ m/ECR by Matt Jeffery/; 
+         if ( $line =~ m/sysstat version/ ) {
+            my ($dummy1, $dummy2, $version) = split(/ /, $line);
+            die "$this: I will only work with iostat version 5\n" if $version !~ m/^5/; 
+         }
+      }
+      close(DF);
+   } else {
+      die "$this: can't locate iostat on this machine, sorry, I can't run without it\n";
+   }
+
+   if ( defined($opts{"start"}) ) {
+      $action = "START";
+   } elsif ( defined($opts{"stop"}) ) {
+      $action = "STOP";
+   } elsif ( defined($opts{"plot"}) ) {
+      $action = "PLOT";
+      @plot_type = split(/,/, lc($opts{"plot"}));
+   } elsif ( defined($opts{"parse"}) ) {
+      $action = "PARSE";
+   } else {
+      print STDERR "$this: nothing to do.\n";
+      show_usage();
+   }
+   
+   if ( $action eq "START" ) {
+      if ( ! defined($opts{"pid_file"}) ) {
+         print "$this: Missing --pid_file parameter\n";
+         show_usage();
+      } else {
+         $pid_file = $opts{"pid_file"};
+      }
+      if ( ! defined($opts{"log_file"}) ) {
+         print "$this: Missing --log_file parameter\n";
+         show_usage();
+      } else {
+         $log_file = $opts{"log_file"};
+      }
+      if ( defined($opts{"interval"}) ) {
+         $interval = $opts{"interval"};
+      } else {
+         $interval = 60;
+      }
+      if ( defined($opts{"log_event"}) ) {
+         $log_event = $opts{"log_event"};
+      } else {
+         $log_event = "";
+      }
+   }
+
+   if ( $action eq "STOP" ) {
+      if ( ! defined($opts{"pid_file"}) ) {
+         print "$this: Missing --pid_file parameter\n";
+         show_usage();
+      } else {
+         $pid_file = $opts{"pid_file"};
+      }
+   }
+
+   if ( $action eq "PLOT" ) {
+      if ( ! defined($opts{"log_file"}) ) {
+         print "$this: Missing --log_file parameter\n";
+         show_usage();
+      } else {
+         $log_file = $opts{"log_file"};
+      }
+      #if ( ! @plot_type =~ /util|cpu|rwmb/ ) {
+      #   print STDERR "$this: Not a valid plot type\n";
+      #   show_usage();
+      #}
+   }
+   if ( $action eq "PARSE" ) {
+      if ( ! defined($opts{"log_file"}) ) {
+         print "$this: Missing --log_file parameter\n";
+         show_usage();
+      } else {
+         $log_file = $opts{"log_file"};
+      }
+   }
+}
+
+
+
+# ---------------------------------------------------------------------------
+# build a list of all cciss devices on the machine
+sub get_devices() {
+   my %devices;
+   my $line;
+   open(DF, "df -k|");
+   while ($line = <DF>) {
+      # need to capture the driver name as it will appear in the iostat output, namely:
+      # cciss/c0d0p1 NOT /dev/cciss/c0d0p1
+      if ( $line =~ /^\S+\/(cciss\/\S+).*$/ ) {
+         my ($device, $blocks, $used, $available, $pct, $mount_point) = split(/\s+/,$line);
+         $devices{$1} = $mount_point;
+      }
+   }
+   close(DF);
+
+   if ( $debug > 0 ) {
+      print "Devices:\n";
+      foreach my $key (keys %devices) {
+         print "   ", $key, " = ", $devices{$key}, "\n";
+      }
+   }
+
+   return %devices;
+}
+
+
+# ---------------------------------------------------------------------------
+# build a command line for iostat using all devices pased to us
+sub get_iostat_cmd(%) {
+   my ($devs) = @_;
+   my @io_cmd = ($IOSTAT);
+
+   my @keys = sort { lc($a) cmp lc($b) } keys %$devs;
+   push(@io_cmd, "-t");
+   # NOTE: this sytax for the iostat command only works with the version
+   # of iostat that mjeffe has altered.  The -t options for standard iostat,
+   # does not take a date format string.
+   push(@io_cmd, "\"$datetime_fmt\"") if $mrj_iostat;
+
+   foreach my $key (@keys) {
+      push(@io_cmd, "-x", $key);
+   }
+   push(@io_cmd, $interval);
+
+   # set environment variable for iostat date format
+   $ENV{"S_TIME_FORMAT"} = "ISO";
+   return(@io_cmd);
+}
+
+
+# ---------------------------------------------------------------------------
+# start logging process in the background and exit
+sub start_log() {
+
+   # show what we are using
+   print STDERR "\n",
+      "$this: cvs id: $cvs_id\n\n",
+      "   USING gnuplot: $GNUPLOT\n",
+      # apparently some versions of gnuplot don't take ANY command line options
+      #"     VERSION: ", `$GNUPLOT --version 2>&1`, "\n",
+      "     VERSION: I can't determine...\n",
+      "   USING iostat: $IOSTAT\n",
+      "     VERSION: \n", `$IOSTAT -V 2>&1`, "\n\n";
+
+   my %devices = get_devices();
+   my @cmd = get_iostat_cmd(\%devices);
+
+   open(LOG,">",$log_file) || die "$this: Can't open log file $log_file for writing\n";;
+   print LOG "LOG EVENT: $log_event\n\n";
+   close(LOG);
+   # put the iostat cmd in the background, redirect it's output to the log_file
+   # and save it's pid to the pid_file.
+   push(@cmd,'>>',"$log_file",'2>&1','&',"\n",'echo','$!','>',"$pid_file");
+   if ( $debug > 0 ) {
+      print "iostat opts:\n";
+      print "   ", join(" ", @cmd), "\n";
+   }
+
+   system(join(" ",@cmd)) && die "$this: Cannot execute iostat command:\n", join(" ",@cmd), "\n";
+}
+
+
+# ---------------------------------------------------------------------------
+# stop a loging process for the pid in the given pid_file
+sub stop_log() {
+
+   if ( ! -f $pid_file ) {
+      die "$this: Can't find pid file $pid_file\n";
+   }
+
+   my $pid = `cat $pid_file` || die "$this: Can't read pid file $pid_file\n";
+   kill(9, $pid) || die "$this: Could not kill process id $pid\n";
+   system("rm", "-f", "$pid_file") && print STDERR "$this: could not \"rm -f\" the pid file $pid_file\n";
+}
+
+
+
+# ---------------------------------------------------------------------------
+# Parse the iostat log file into a wide flat delimited record, with data for
+# cpu and each device in one record.  The following notes how iostat presents
+# the data, and how we output the data.  The output is used in the plot_xxxx
+# functions, so if anything changes here, it will also have to change in those
+# functions.
+#
+# iostat output:
+# CPU: %user %nice %sys iowait %idle
+# DEVICE: rrqm wrqm r w rsec wsec rkB wkB avgrq avgqu await svctm util
+#
+# parsed output:
+# CPU: date-time user nice sys busy
+# DEVICE: device mount_point rMb/s wMb/s avgrq-sz-Mb avgqu-sz-Mb util
+#
+# ---------------------------------------------------------------------------
+sub parse_log() {
+
+   my $d = " ";
+   my $skip = 0;
+   my $line_type = "NONE";
+   my ($dummy, $device, $time, $user, $nice, $sys, $iowait, $idle);
+   my $device_num = 0;
+   my %outbuf;      # will be keyed by device
+   my $first_line = 1;   # throw away first report since it's output is all out of whack
+
+   my %devices = get_devices();
+   my @dev_keys = sort { lc($a) cmp lc($b) } keys %devices;
+   my $total_devices = scalar(@dev_keys);
+
+   my $parsed_file = "$TMP_DIR/" . basename($log_file) . ".parsed";
+   push(@trash, $parsed_file);
+
+   open(LOG,"<",$log_file) || die "$this: Can't open log file $log_file\n";
+   open(OUT,">",$parsed_file) || die "$this: Can't open file $parsed_file for writing";
+
+   # print header - make column number and device a part of each header field
+   my $cn = 1;
+   print OUT "#",$cn++,":time",$d,$cn++,":cpu_usr",$d,$cn++,":cpu_nice",$d,$cn++,":cpu_sys",$d,$cn++,":cpu_busy";
+   foreach my $dev (@dev_keys) {
+      print OUT $d,$cn++,":device",$d,$cn++,":",$devices{$dev},$d,$cn++,":",$devices{$dev},":rMb/s",
+                $d,$cn++,":",$devices{$dev},":wMb/s",$d,$cn++,":",$devices{$dev},":avgrq-sz-Mb",
+                $d,$cn++,":",$devices{$dev},":avgqu-sz",$d,$cn++,":",$devices{$dev},":util";
+   }
+   print OUT "\n";
+
+   # parse lines of io log
+   while ( my $line = <LOG> ) {
+      chomp($line);
+
+      if ( $skip > 0 ) {
+         $skip--;
+         next;
+      }
+
+      if ( $line =~ m/Time:\s+(.*)$/ ) {
+         $time = $1;
+         $skip = 1;
+         $line_type = "TIME";
+         #$time = (split(/\s+/, $line))[1];
+         next;
+      }
+      elsif ( $line =~ m/cciss/ ) {
+         $line_type = "DEVICE";
+         $device = $line;
+         $device_num++;
+         next;
+      }
+
+      if ( $line_type eq "TIME" ) {
+         ($dummy, $user, $nice, $sys, $iowait, $idle) = split(/\s+/, $line);
+         if ( ! $first_line ) {
+            print OUT $time, $d, $user, $d, $nice, $d, $sys, $d, int(100 - $idle);
+         }
+         $line_type = "NONE";
+      }
+      elsif ( $line_type eq "DEVICE" ) {
+         my ($dummy, $rrqm, $wrqm, $r, $w, $rsec, $wsec, $rkB, $wkB, $avgrq, $avgqu, $await, $svctm, $util) 
+             = split(/\s+/, $line);
+         $outbuf{$device} = $d.$device.$d.$devices{$device}.$d.int($rsec * 512 / 1048576).$d
+               .int($wsec * 512 / 1048576).$d.int($avgrq * 512 / 1048576).$d.$avgqu.$d.$util;
+         $line_type = "NONE";
+         if ( $device_num == $total_devices ) {
+            $device_num = 0;
+            # since I can't guaratee that iostat will print the devices in the same order in which
+            # I passed it the devices...  get them in the same order as the header layout row.
+            if ( ! $first_line ) {
+               foreach my $dev (@dev_keys) {
+                  print OUT $outbuf{$dev};
+               }
+               print OUT "\n";
+            } else {
+               $first_line = 0;
+            }
+         }
+      }
+   }
+   close(LOG) || die "$this: Can't close log file $log_file\n";
+   close(OUT) || die "$this: Can't close util file $parsed_file\n";
+
+   if ( $action eq "PARSE" ) {
+      print STDOUT "$this: parsed file is $parsed_file\n";
+      exit(0);
+   }
+
+   return($parsed_file);
+}
+
+# ---------------------------------------------------------------------------
+# generate util plot from parsed log using gnuplot
+sub plot_util($$$$) {
+   my ($plot_defaults, $infile, $offsets_tmp, $devices_tmp) = @_;
+   my %offsets = %$offsets_tmp;
+   my %devices = %$devices_tmp;
+   my $img_file = $OUTPUT_DIR . "/" . basename($infile, ".parsed") . ".util";
+   my @dev_keys = sort { lc($a) cmp lc($b) } keys %devices;
+   #my $total_devices = scalar(@dev_keys);
+
+   # build the string for gnuplot's plot command
+   my $plotstr = "   \"$infile\" using 1:5 title \"cpu_busy\"";
+   my $dev_num = 0;
+   foreach my $dev_key (@dev_keys) {
+      $plotstr .= ", \\\n   \"$infile\" using 1:"
+               . ($offsets{cpu_header} + ($dev_num * $offsets{num_fields}) + $offsets{util})
+               . " title \"$devices{$dev_key}" . "_util\"";
+      $dev_num++;
+   }
+#   print STDERR "plotstr:\n$plotstr\n";
+
+
+   # build a gnuplot plot file and feed it to gnuplot
+   if ( $debug > 0 ) {
+      open(GP, "|$GNUPLOT -");
+   } else {
+      open(GP, "|$GNUPLOT - > /dev/null 2>&1");
+   }
+
+   print GP <<EOF;
+$plot_defaults
+set ylabel "Percent Utilization";
+set xlabel "Time";
+set output "$img_file.png";
+plot \\
+   $plotstr;
+EOF
+   
+   close(GP);
+}
+
+
+# ---------------------------------------------------------------------------
+# generate cpu plot from parsed log using gnuplot
+sub plot_cpu($$$$) {
+   my ($plot_defaults, $infile, $offsets_tmp, $devices_tmp) = @_;
+   my $img_file = $OUTPUT_DIR . "/" . basename($infile, ".parsed") . ".cpu";
+
+   # build a gnuplot plot file and feed it to gnuplot
+   if ( $debug > 0 ) {
+      open(GP, "|$GNUPLOT -");
+   } else {
+      open(GP, "|$GNUPLOT - > /dev/null 2>&1");
+   }
+   
+   print GP <<EOF;
+$plot_defaults
+set ylabel "Percent Utilization";
+set xlabel "Time";
+set output "$img_file.png";
+plot \\
+   "$infile" using 1:5 title "busy", \\
+   "$infile" using 1:2 title "user", \\
+   "$infile" using 1:3 title "nice", \\
+   "$infile" using 1:4 title "sys";
+EOF
+   
+   close(GP);
+}
+
+
+# ---------------------------------------------------------------------------
+# generate read/write Mb plot from parsed log using gnuplot
+sub plot_rwmb($$$$) {
+   my ($plot_defaults, $infile, $offsets_tmp, $devices_tmp) = @_;
+   my %offsets = %$offsets_tmp;
+   my %devices = %$devices_tmp;
+   my $img_file = $OUTPUT_DIR . "/" . basename($infile, ".parsed") . ".rwmb";
+
+   my @dev_keys = sort { lc($a) cmp lc($b) } keys %devices;
+   #my $total_devices = scalar(@dev_keys);
+
+   # build the string for gnuplot's plot command
+   my $plotstr = "   \"$infile\" using 1:5 title \"cpu_busy\"";
+   my $dev_num = 0;
+   foreach my $dev_key (@dev_keys) {
+      $plotstr .= ", \\\n   \"$infile\" using 1:(\$"
+               . ($offsets{cpu_header} + ($dev_num * $offsets{num_fields}) + $offsets{rMbps}) . "+\$"
+               . ($offsets{cpu_header} + ($dev_num * $offsets{num_fields}) + $offsets{wMbps}) . ")"
+               . " title \"$devices{$dev_key}" . "_r+w\"";
+      $dev_num++;
+   }
+   #print STDERR "plotstr:\n$plotstr\n";
+
+
+   # build a gnuplot plot file and feed it to gnuplot
+   if ( $debug > 1 ) {
+      open(GP, "|$GNUPLOT -");
+   } else {
+      open(GP, "|$GNUPLOT - > /dev/null 2>&1");
+   }
+   
+   print GP <<EOF;
+$plot_defaults
+set ylabel "Mb/s or \% Util for cpu";
+set xlabel "Time";
+set output "$img_file.png";
+plot \\
+   $plotstr;
+EOF
+   
+   close(GP);
+}
+
+
+# ---------------------------------------------------------------------------
+# generate read/write Mb plot from parsed log using gnuplot
+sub plot_totrw($$$$) {
+   my ($plot_defaults, $infile, $offsets_tmp, $devices_tmp) = @_;
+   my %offsets = %$offsets_tmp;
+   my %devices = %$devices_tmp;
+   my $img_file = $OUTPUT_DIR . "/" . basename($infile, ".parsed") . ".totrw";
+
+   my @dev_keys = sort { lc($a) cmp lc($b) } keys %devices;
+   #my $total_devices = scalar(@dev_keys);
+
+   # build the string for gnuplot's plot command
+   my $plotstr = "   \"$infile\" using 1:5 title \"cpu_busy\", \\\n   \"$infile\" using 1:(";
+   my $dev_num = 0;
+   foreach my $dev_key (@dev_keys) {
+      $plotstr .= "\$"
+               . ($offsets{cpu_header} + ($dev_num * $offsets{num_fields}) + $offsets{rMbps}) . "+\$"
+               . ($offsets{cpu_header} + ($dev_num * $offsets{num_fields}) + $offsets{wMbps}) . "+";
+      $dev_num++;
+   }
+   $plotstr .= "0) title \"total r+w\"";
+   #print STDERR "plotstr:\n$plotstr\n";
+
+   # build a gnuplot plot file and feed it to gnuplot
+   if ( $debug > 0 ) {
+      open(GP, "|$GNUPLOT -");
+   } else {
+      open(GP, "|$GNUPLOT - > /dev/null 2>&1");
+   }
+   
+   print GP <<EOF;
+$plot_defaults
+set ylabel "Mb/s or \% Util for cpu";
+set xlabel "Time";
+set output "$img_file.png";
+plot \\
+   $plotstr;
+EOF
+   
+   close(GP);
+}
+
+
+# ---------------------------------------------------------------------------
+# plot read and write separately
+sub plot_rw($$$$) {
+   my ($plot_defaults, $infile, $offsets_tmp, $devices_tmp) = @_;
+   my %offsets = %$offsets_tmp;
+   my %devices = %$devices_tmp;
+   my $img_file = $OUTPUT_DIR . "/" . basename($infile, ".parsed") . ".rw";
+
+   my @dev_keys = sort { lc($a) cmp lc($b) } keys %devices;
+   #my $total_devices = scalar(@dev_keys);
+
+   # build the string for gnuplot's plot command
+   my $plotstr = "   \"$infile\" using 1:5 title \"cpu_busy\", \\\n   \"$infile\" using 1:(";
+   my $dev_num = 0;
+   # build read string
+   my $dev_key;
+   foreach $dev_key (@dev_keys) {
+      $plotstr .= "\$"
+               . ($offsets{cpu_header} + ($dev_num * $offsets{num_fields}) + $offsets{rMbps}) . "+";
+      $dev_num++;
+   }
+   $plotstr .= "0) title \"total r\", \\\n";
+
+   # build write string
+   $plotstr .= "   \"$infile\" using 1:(";
+   $dev_num = 0;
+   foreach $dev_key (@dev_keys) {
+      $plotstr .= "\$"
+               . ($offsets{cpu_header} + ($dev_num * $offsets{num_fields}) + $offsets{wMbps}) . "+";
+      $dev_num++;
+   }
+   $plotstr .= "0) title \"total w\"";
+   #print STDERR "plotstr:\n$plotstr\n";
+
+   # build a gnuplot plot file and feed it to gnuplot
+   if ( $debug > 0 ) {
+      open(GP, "|$GNUPLOT -");
+   } else {
+      open(GP, "|$GNUPLOT - > /dev/null 2>&1");
+   }
+   
+   print GP <<EOF;
+$plot_defaults
+set ylabel "Mb/s or \% Util for cpu";
+set xlabel "Time";
+set output "$img_file.png";
+plot \\
+   $plotstr;
+EOF
+   
+   close(GP);
+}
+
+
+# ---------------------------------------------------------------------------
+# plot a log file using gnuplot
+sub plot_log() {
+
+   # offsets for fields, relative to the number of devices on a give box
+   # NOTE: If the format for 
+   my %offsets = (
+      "cpu_header" => 5,
+      "device" => 1,
+      "mount_point" => 2,
+      "rMbps" => 3,
+      "wMbps" => 4,
+      "avgrq-sz-Mb" => 5,
+      "avgqu-sz" => 6,
+      "util" => 7,
+      "num_fields" => 7,    # number of fields per device record, i.e. how many stats we are collecting per device
+   );
+
+   # default gnuplot commands to setup the plot style, etc
+   my $plot_defaults = <<EOF;
+set xdata time
+set timefmt "$datetime_fmt";
+set format x "$label_datetime_fmt";
+set timestamp bottom;
+set data style lines;
+#set ylabel "Mb/s or \% Util for cpu";
+#set xlabel "Time";
+set term png small;
+set size 2,0.5;
+set grid layerdefault;
+set key left;
+#show grid;
+EOF
+
+   # list of cciss devices
+   my %devices = get_devices();
+   my $parsed_log = parse_log();
+
+   foreach my $ptype (@plot_type) {
+      if ( $ptype eq "all" ) {
+         plot_util($plot_defaults, $parsed_log, \%offsets, \%devices);
+         plot_cpu($plot_defaults, $parsed_log, \%offsets, \%devices);
+         plot_rwmb($plot_defaults, $parsed_log, \%offsets, \%devices);
+         plot_totrw($plot_defaults, $parsed_log, \%offsets, \%devices);
+         plot_rw($plot_defaults, $parsed_log, \%offsets, \%devices);
+         last;
+      }
+
+      # call appropriate function - there is probably a more Pearly way to do this...
+      if    ( $ptype eq "util" ) { plot_util($plot_defaults, $parsed_log, \%offsets, \%devices); }
+      elsif ( $ptype eq "cpu" ) { plot_cpu($plot_defaults, $parsed_log, \%offsets, \%devices); }
+      elsif ( $ptype eq "rwmb" ) { plot_rwmb($plot_defaults, $parsed_log, \%offsets, \%devices); }
+      elsif ( $ptype eq "totrw" ) { plot_totrw($plot_defaults, $parsed_log, \%offsets, \%devices); }
+      elsif ( $ptype eq "rw" ) { plot_rw($plot_defaults, $parsed_log, \%offsets, \%devices); }
+      else { print STDERR "$this: Unsuported plot type\n"; }
+   }
+}
+
+
+# ------------------------------------------------------------------------
+#   MAIN
+# ------------------------------------------------------------------------
+
+# check input parameters
+$Getopt::Long::ignorecase = 1;
+my $result = GetOptions(\%opts,'start','stop','plot=s','pid_file=s','log_file=s','interval:i',
+                        'log_event:s','debug','help','parse','temp_dir=s','output_dir=s',
+                        'gnuplot=s','iostat=s','version');
+
+if ( defined($opts{"help"}) ) {
+   show_usage();
+}
+
+if ( defined($opts{"version"}) ) {
+   print STDERR "$this: cvs id: $cvs_id\n\n";
+   exit 0;
+}
+
+check_parms();
+
+# do what we were asked to do
+if ( $action eq "START" ) {
+   start_log();
+} elsif ( $action eq "STOP" ) {
+   stop_log();
+} elsif ( $action eq "PLOT" ) {
+   plot_log();
+} elsif ( $action eq "PARSE" ) {
+   parse_log();
+}
+
+# clean up temp files
+unless ( $debug > 0 ) {
+   foreach (@trash) {
+      system("rm", "-f", "$_") && print STDERR "$this: could not \"rm -f\" the temp file $_\n";
+   }
+}
+
+#print "$this: finished\n";
+
+
+

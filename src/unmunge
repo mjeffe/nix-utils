@@ -1,0 +1,12 @@
+#!/bin/sh
+# ---------------------------------------------------------------------------
+# Another bug-ugly utility from Matt's code archive.
+#
+# Clean up some common crap and output plain text.  I find myself doing this so
+# often that I just saved it as a script.
+#
+# Acts as a filter, reads stdin and writes to stdout.
+# ---------------------------------------------------------------------------
+
+#         strip \r   strip \n   strip all non-acii   output with simple unix \n
+perl -ne 's/\015//g; s/\012//g; s/[^[:ascii:]]//g;   print; print "\n";'

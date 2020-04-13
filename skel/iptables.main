@@ -1,0 +1,47 @@
+# ---------------------------------------------------------------------------
+# $Id$
+#
+# Manually maintained firewall rules
+#
+# After modifying this file, run this:
+#   $ iptables-restore < iptables.main
+#   $ service iptables save   # or iptables-save > /etc/sysconfig/iptables
+#
+# See /etc/services for a list of common protocol port numbers
+#
+# ---------------------------------------------------------------------------
+*filter
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [8313610:20630876324]
+-A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT 
+-A INPUT -p icmp -j ACCEPT 
+-A INPUT -i lo -j ACCEPT 
+
+# ssh
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 22 -j ACCEPT 
+
+# mysql
+#-A INPUT -p tcp -m state --state NEW -m tcp --dport 3306 -j ACCEPT 
+# mysql more restrictive - only allow between source -s ip and this destination -d ip
+#-A INPUT -p tcp -s 10.0.0.221 --sport 1024:65535 -d 10.0.1.89 --dport 3306 -m state --state NEW,ESTABLISHED -j ACCEPT
+#-A OUTPUT -p tcp -s 10.0.1.89 --sport 3306 -d 10.0.0.221 --dport 1024:65535 -m state --state ESTABLISHED -j ACCEPT
+
+# postgresql
+#-A INPUT -p tcp -m state --state NEW -m tcp --dport 5432 -j ACCEPT 
+# mysql more restrictive - only allow between source -s ip and this destination -d ip
+-A INPUT -p tcp -s 10.0.0.221 --sport 1024:65535 -d 10.0.1.90 --dport 5432 -m state --state NEW,ESTABLISHED -j ACCEPT
+-A OUTPUT -p tcp -s 10.0.1.90 --sport 5432 -d 10.0.0.221 --dport 1024:65535 -m state --state ESTABLISHED -j ACCEPT
+
+# http
+#-A INPUT -p tcp -m state --state NEW -m tcp --dport 80 -j ACCEPT 
+
+# https
+#-A INPUT -p tcp -m state --state NEW -m tcp --dport 443 -j ACCEPT 
+
+# reject everything else
+-A INPUT -j REJECT --reject-with icmp-host-prohibited 
+-A FORWARD -j REJECT --reject-with icmp-host-prohibited 
+COMMIT
+
+

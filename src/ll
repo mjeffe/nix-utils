@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# -----------------------------------------------------------------------------------------
+# $Id: ll 630 2005-08-18 18:14:26Z mjeffe $
+#
+# Another bug-ugly utility from Matt's code archive.
+#
+# Provide a nice sorted ll listing on GNU/Linux the way you get on Tru64 with directories
+# listed separately from files.
+#
+# NOTE: This was a perl script through revision 1.4.  If you want it back then do:
+#   cvs update -p -r1.4 ll > ll.pl
+# -----------------------------------------------------------------------------------------
+
+ls -lF "$*" | grep -v '/$'
+ls -lF "$*" | grep '/$'
+

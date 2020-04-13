@@ -1,0 +1,8 @@
+#!/bin/bash
+# Another bug-ugly utility from Matt's code archive.
+#
+# make side by side diffs easier (less typing) with svn.
+# ------------------------------------------------------------------------
+
+svn diff --diff-cmd /usr/bin/diff -x '--side-by-side' $@
+

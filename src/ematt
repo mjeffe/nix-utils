@@ -1,0 +1,263 @@
+#!/usr/local/bin/perl
+# ------------------------------------------------------------------------
+# $Id: ematt,v 1.3 2008/07/14 16:36:24 mjeffe Exp $
+#
+# Another bug-ugly utility from Matt's code archive.
+#
+# Send email with attachments
+#
+# TODO: add unix to dos conversion
+# ------------------------------------------------------------------------
+
+use strict;
+use warnings;
+
+use MIME::Lite;
+use Net::SMTP;
+use File::Basename;
+use Getopt::Long;
+
+sub usage();
+
+# cmd line options
+my ($from_addr, $subject, $messagefile, $mail_host, $help);
+my (@to_addrs, @attachments, @cc_addrs, @bcc_addrs );
+my $message;
+
+$Getopt::Long::ignorecase = 1;
+my %opts = (
+   "f|from=s"           => \$from_addr,
+   "c|cc=s"             => \@cc_addrs,
+   "b|bcc=s"            => \@bcc_addrs,
+   "a|attachment=s"     => \@attachments,
+   "s|subject=s"        => \$subject,
+   "m|message=s"        => \$messagefile,
+   "e|mail-host=s"      => \$mail_host,
+   "h|help"             => \$help,
+);
+
+GetOptions(%opts);
+usage() if ( $help );
+
+
+#
+# verify required parms
+#
+
+if ( @ARGV ) {
+   @to_addrs = @ARGV;
+} else {
+   die "I can't read your mind! You gotta tell me who to send this to...\n";
+}
+if ( !defined($messagefile) ) {
+   die "You want me to send an email with no message?  Forget it man, I'm not doing it...\n";
+}
+# slurp in the message.  It makes things easier down below.
+if ( $messagefile =~ m/^-$/ ) {
+   open(MSG, "<&STDIN") || die "Can't open STDIN to read message body: $!\n";
+} else {
+   open(MSG, "<", $messagefile) || die "Can't open $message to read message body: $!\n";
+}
+while ( my $line = <MSG> ) {
+   $message .= $line;
+}
+close(MSG) || die "Can't close file: $!\n";
+
+
+#
+# get or set optional parms
+#
+
+# make a guess at the mail host
+if ( !defined($mail_host) ) {
+   $mail_host = 'localhost';
+}
+if ( ! defined($from_addr) ) {
+   $from_addr = `whoami`;
+   chomp($from_addr);
+   $from_addr .= '@' . `hostname`;
+}
+if ( ! defined($subject) ) {
+   # This will drive Bill Gillespie nuts  :-)
+   $subject = "This subject intentionally left blank";
+}
+
+#
+# build the email object
+#
+
+my $msg = new MIME::Lite or die "Error creating email container: $!\n";
+MIME::Lite->send('smtp', $mail_host, Timeout=>60);   # use Net::SMTP when sending
+$msg->add(From      => $from_addr);
+$msg->add(To        => join(',', @to_addrs));
+$msg->add(Cc        => join(',', @cc_addrs));
+$msg->add(Bcc       => join(',', @bcc_addrs));
+$msg->add(Subject   => $subject);
+
+# If no attachments, we are done.  Send it.
+if ( scalar(@attachments) == 0 ) {
+   $msg->build(
+     Type      => 'text/plain',
+     Data      => $message
+   ) or die "Error building email container: $!\n";
+
+   $msg->send() or die "Error sending email: $!\n";
+   exit(0);
+}
+
+#
+# we have attachments, so there is more to do
+#
+
+$msg->build(
+  Type      =>'multipart/mixed',
+  Data      => $message
+) or die "Error building email container: $!\n";
+
+# add the message
+$msg->attach (
+  Type      => 'text/plain',
+  Data => $message
+) or die "Error adding the text message part: $!\n";
+
+# add attachments
+#
+# MIME::Lite will not take a csv lists of attachments (like the to, cc and bcc
+# fields will).  We allow two ways of specifying multiple attachments: the -a
+# file1 -a file2 form, and the -a 'file1,file2' form.  Here we look for the
+# latter and convert it into an array with a single file in each bucket.  We
+# also need to account for the possibility that we may get several -a options
+# with multiple files in each.
+foreach my $att (@attachments) {
+   my @temp_att = split(/,/, $att);
+
+   foreach my $a (@temp_att) {
+      $a =~ s/^\s+//;   # trim leading space
+      $a =~ s/\s+$//;   # trim trailing space
+      if (! -e $a || ! -f $a ) {
+         die "Can't find attachment $a: $!\n";
+      }
+
+      $msg->attach (
+         Type => 'application/octet-stream', # generic binary, may affect spam/virus filters
+         Path => $a,
+         Filename => basename($a),
+         Disposition => 'attachment'
+      ) or die "Error adding $a: $!\n";
+   }
+}
+
+# bon voyage
+$msg->send() or die "Error sending email: $!\n";
+
+exit(0);
+
+
+
+# ------------------------------------------------------------------------
+sub usage() {
+   eval "use Pod::Usage qw( pod2usage )";
+
+   if ( $@ ) {
+       print <<'END';
+
+* Pod::Usage was not found.  The formatting may be suboptimal.  Consider
+  upgrading your Perl --- Pod::Usage is standard from 5.6 onwards, and
+  versions of perl prior to 5.6 are getting rather rusty, now.  Alternatively,
+  install Pod::Usage direct from CPAN.
+END
+   
+    local $/ = undef;
+    my $message = <DATA>;
+    $message =~ s/^=(head1|item) //gm;
+    $message =~ s/^=(over|back).*\n//gm;
+    $message =~ s/\n{3,}/\n\n/g;
+    print $message;
+   } else {
+      print "\n";
+      pod2usage( -exitval => 'NOEXIT',
+                 -verbose => 3,
+                 -output  => '-',
+                 #-output  => \*STDOUT,
+               );
+   }
+
+   exit 1;
+}
+
+
+
+__DATA__
+
+=pod
+
+=head1 NAME
+
+ematt - Sends email with optional attachments.
+
+=head1 SYNOPSIS
+
+B<ematt> [B<options>] [F<recipient1 recipient2 ...>]
+
+=head1 DESCRIPTION 
+
+This is designed to act like Unix mail for sending simple command line email,
+with the addition of being able to include attachments.  Command line options
+are the same as much as possible.  It will take a guess at the "from" address
+and the mail server to use, if they are not supplied.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-m> | B<--message> F<message_file> (Required)
+
+Supply the text for the message body in a file.  If the file name is "-" then
+the message will be read from stdin.
+
+=item B<-f> | B<--from> F<[email_address]> (Optional)
+
+From email address.  If not supplied, defaults to <user>@<hostname>.
+
+=item B<-s> | B<--subject> F<subject_text> (Optional)
+
+Supply the text for the subject line.  Must be enclosed in double quotes if
+more than one word.
+
+=item B<-c> | B<--cc> F<email_address_list> (Optional)
+
+Send a carbon copy to the B<list> of email addresses.  You can supply a single
+-c option with a comma seperated list of addresses (enclosed in quotes), or you
+can supply multiple -c options with one address each.
+
+=item B<-b> | B<--bcc> F<email_address_list> (Optional)
+
+Send a blind carbon copy to the B<list> of email addresses.  You can supply a
+single -c option with a comma seperated list of addresses (enclosed in quotes),
+or you can supply multiple -c options with one address each.
+
+=item B<-a> | B<--attachment> F<'file1,file2,...'> (Optional)
+
+You can supply a single -a option with a comma seperated list of files
+(enclosed in quotes), or you can supply multiple -a options with one file each.
+
+=item B<-e> | B<--mail-host> F<mail_host> (Optional)
+
+Supply the email server host.  Defaults to "localhost".
+
+=item B<-h> | B<--help> Optional
+
+Display this page
+
+=back
+
+=head1 BUGS
+
+Please report bugs or enhancement requests to Matt Jeffery - C<mjeffe@yahoo.com>.
+
+=head1 PREREQUISITES
+
+This script requires C<MIME::Lite> (and whatever it requires).
+
+=cut
+

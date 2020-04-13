@@ -1,0 +1,625 @@
+#! /usr/bin/perl
+# ------------------------------------------------------------------------
+# $Id: adhocexcel 871 2010-11-04 16:28:22Z mjeffe $
+#
+# Another bug-ugly utility from Matt's code archive.
+#
+# Generate a spreadsheet from adhoc sql
+#
+# BUGS:
+#   See "Known Bugs" in help message below
+#   
+# ------------------------------------------------------------------------
+
+use Getopt::Long;
+use FileHandle;
+use File::Basename;
+use DBI;
+use Spreadsheet::WriteExcel;
+use Spreadsheet::WriteExcel::Big;
+use Spreadsheet::WriteExcel::Utility;
+use Data::Dumper;
+use strict;
+use warnings;
+
+my $VERSION = '$Id: adhocexcel 871 2010-11-04 16:28:22Z mjeffe $';
+
+my $this = basename($0);
+my %opts = ();
+my $COL_WIDTH = 12;  # typical column width for id, abilitec links, etc
+my $GENERIC_TAB_NAME = "adhoc";
+
+# prototypes
+sub dump_query($$;$$$$);
+sub do_adhoc($$;$);
+sub define_formats($);
+sub get_opts();
+sub parse_sql();
+sub amp_substitution($);
+sub unix2dos($);
+
+
+
+sub usage ()
+{
+   print <<EOF;
+
+SYNOPSIS:
+   $this - produces a spreadsheet with the results of the supplied sql.
+
+USAGE:
+   $this [options] -u user[\@dbname]/pass -o spreadsheet.xls -f sql_file
+   cat sql_file | $this [options] -u user[\@dbname]/pass -o spreadsheet.xls
+
+DESCRIPTION:
+   $this takes sql "select" queries as input, and generates a
+   Microsoft Excel spreadsheet with the results.  The sql input may contain any
+   number of queries, and by default, a new tab is created for the results of
+   each query.
+
+DESCRIPTION:
+   $this creates a Microsoft Excel spreadsheet and populates it with the
+   results of the input SQL.  It first parses the sql looking for
+   select queries.  See KNOWN BUGS AND CAVEATS section below for sql parsing
+   issues.  It then executes each query and by default, generates a new tab for
+   the results of each.  The following example shows basic usage:
+
+      cat <<SQL | $this -u scott/tiger -o foo.xls
+         -- this style comments are ignored (except for special ones described
+         -- below) however C style comments confuse the parser!!!
+
+         -- give me everything in the foobar table
+         select * from foobar;
+
+         -- give me another tab with all individuals in AR.  Use special
+         -- embedded comment directives with this query
+         -- GREENBAR_COLUMN_NAME = hh_id
+         -- SPREADSHEET_TAB_NAME = AR Indivs
+         select indiv_id, hh_id, last_name, street_num, street_name
+         from indiv_tb where state_cd = 'AR' order by 2,1;
+      SQL
+ 
+   It is possible to embed special comments in the sql (as in the example
+   above) which give special instructions to $this.  The comments
+   must be immediately adjacent to the sql they apply to (no blank lines)
+   and each special comment must be on a line of it's own.
+
+   -- SPREADSHEET_TAB_NAME = Tab Name
+
+   This defines the text to be used as the tab name for this query's result
+   set.  For any query that does not have this comment, $this will
+   name the tabs ${GENERIC_TAB_NAME}1, ${GENERIC_TAB_NAME}2, etc. Note that the text needs to
+   conform to the Excel requirements for tab names (less than 30 bytes and only
+   a few special characters are allowed).
+
+   -- GREENBAR_COLUMN_NAME = column_name or column_number
+
+   This special comment can be used supply the column name or column number to
+   greenbar on.  Greenbar is a term used for old style computer print, where
+   each line is alternately light green or white.  In this case, $this
+   will keep track of the value in "column_name" and will set Excel's
+   background color to light green, every other time the value in "column_name"
+   changes.
+
+OPTIONS:
+
+   -u, --userpass [user[\@dbname]/pass]
+         Provide the Oracle username and password separated with a / character.
+         For mysql or postgresql, you will need to add \@dbname to the user.
+
+   -o, --spreadsheet [spreadsheet.xls]
+         Spreadsheet file name.  Must end with .xls extension.
+
+   -f, --sql_file [file_name]
+         File containing sql.  If not present, will read from stdin.
+
+   -m, --max_rows N
+         Limit each query to a max of N rows of output.  By default, the number
+         of rows returned from a query is not limited, which can create very
+         large spreadsheets, or even invalid spreadsheets if they exceed the
+         number of rows allowed by Excel. This option will limit the number of
+         rows returned by your sql by wrapping each sql statement with:
+   
+            select * from ( your_sql ) where rownum < N;
+
+         where N is the value supplied to -m.  Use the -t option to see what
+         this looks like without actually excecuting the sql.  Note that if
+         your sql is pulling groups of records, this can truncate the last
+         group. 
+
+   -g, --greenbar N
+         Greenbar rows, every other time the value in column number N changes.
+         Can also be supplied as a special comment in the sql.  See above.
+         NOTE that this option turns on greenbar for every tab will always
+         override the embedded comments, so if -g 2 is supplied, all tabs in
+         the spreadsheet will greenbar on column two, regardless of any special
+         embedded comments.
+
+   -c, --greenbar_color N
+         Greenbar color where N is one of Excel's color code integers (between
+         8 and 63).  Default is 42 - light green.
+
+   -s, --single_tab N
+         By default, a new tab is created for the results of each query. This
+         options dumps the results of all queries into a single tab, with N
+         empty rows between each result set.
+
+   -a, --amp KEY=VALUE
+         This implements sqlplus ampersand substitution variables in $this\'s
+         sql parser, where KEY is the parameter number or name and VALUE is the
+         text that will be substituted. Pass as many of these as you need to on
+         the command line.  Note that &&1, &1, &&1. and &1. are all treated the
+         same. For example:
+
+            --amp 1=myschema --amp 2=mytable --amp my_id=100
+
+         This would cause
+         
+            select * from &&1..&2 where acct_id = &my_id;
+
+         To be replaced with:
+         
+            select * from myschema.mytable where acct_id = 100;
+
+   -v, --verbose
+         Verbose output, echo's sql to stdout.  The deprecated option -p p
+         is still supported, but may not be in future versions.
+
+   -t, --test_only
+         Print sql to stdout and exit, do not execute.  The deprecated option
+         -p t is still supported, but may not be in future versions.
+
+   -h, --help
+         Prints this screen.
+
+   --version
+         Prints $this\'s svn revision id and exits
+
+
+KNOWN BUGS AND CAVEATS:
+   The /* */ style comments are not supported and will almost certainly confuse
+   the parser!
+
+   The sql parser is only intended to support the relatively simple needs of
+   $this.  It is by no means ANSI SQL complient.  It essenetially tries
+   to ignore anything that does not look like a "select" statement (or the
+   special comments described above).  If in doubt, do a dry run with the -t
+   option to see how your file was parsed.
+
+TODO: 
+   * Be able to greenbar on concatenation of multiple columns (kind of a group by)
+   * Add option to die on error - currently sql errors are dumped to the spreadsheet
+   * Code parser to handle /* */ C style comments
+   * Add option to dump sql in spreadsheet before results
+
+$VERSION
+
+Report any comments, bugs or suggestions to Matt Jeffery - mjeffe\@acxiom.com
+
+EOF
+
+exit 0;
+}
+
+STDOUT->autoflush(1);  # So that progress can be watched, even if the output
+                       # is written to a log file instead of to the screen
+
+
+
+# #################################################
+# MAIN
+# #################################################
+
+my $workbook;
+my %formats;
+my $dbh;
+
+# parse command line opts
+get_opts();
+
+unless ( $opts{test_only} ) {
+   $workbook = Spreadsheet::WriteExcel::Big->new($opts{spreadsheet});
+   %formats = define_formats($workbook);
+
+   #$dbh = DBI->connect( "dbi:Oracle:", $opts{username}, $opts{password}, { PrintError => 0, RaiseError => 0 }) ||
+   #   die "$this: Unable to connect to db: $DBI::errstr\n";
+   $dbh = DBI->connect( 
+      #"dbi:mysql:$opts{dbname};mysql_read_default_group=client", 
+      "DBI:Pg:dbname=$opts{dbname}",
+      $opts{username}, 
+      $opts{password}, 
+      { PrintError => 0, RaiseError => 0 }
+   ) || die "$this: Unable to connect to db: $DBI::errstr\n";
+}
+
+print STDOUT scalar localtime, ":	Begin processing.\n" if ( $opts{verbose} );
+
+my @sql = parse_sql();
+
+# produce the excel sheets
+my $i = 0;
+for my $s (@sql) {
+   do_adhoc($$s{sql}, $$s{label}, $$s{gbcol});
+}
+
+print STDOUT scalar localtime, ":	Finished processing.\n" if ( $opts{verbose} );
+
+unless ( $opts{test_only} ) {
+   $workbook->close();
+   $dbh->disconnect();
+}
+exit 0;
+
+
+
+# #################################################
+# FUNCTIONS
+# #################################################
+
+
+# ----------------------------------------------------------------------------
+# dumps results from the $sql query into a tab on the $worksheet.
+#
+# NOTE: $greenbar_col can be either a column number or column name
+# ----------------------------------------------------------------------------
+sub dump_query($$;$$$$)
+{
+   my ($worksheet, $sql, $row, $col, $format, $gbcol) = @_;
+   if ( !$row ) { $row = 0; }
+   if ( !$col ) { $col = 0; }
+   if ( !$format ) { $format = $formats{num_format}; }
+   my $gbvalue = "";
+   my $gbtoggle = 0;
+
+   # the -g option overrides the special comment tag in the sql
+   if ( defined($opts{greenbar}) ) {
+      $gbcol = $opts{greenbar};
+   }
+
+   if ( defined($gbcol) && $gbcol =~ m/^\d/ ) {
+      $gbcol = $gbcol - 1;
+   }
+
+   # if failure, dump error to spreadsheet and continue
+   my $sth;
+   eval { 
+      local $dbh->{RaiseError} = 1;
+      $sth = $dbh->prepare($sql);
+      $sth->execute(); 
+   };
+   if ( $@ ) {
+#      unless ( $opts{single_tab} ) {
+#         $worksheet->set_column($col, $col, 150);
+#         $formats{error_format}->set_text_wrap();
+#      }
+      $worksheet->write($row++, $col, "ERORR when executing sql:", $formats{error_format});
+      $worksheet->write_string($row++, $col, $DBI::errstr, $formats{error_format});
+      #$worksheet->write_string($row++, $col, $@, $formats{error_format});
+      $row++;
+      $worksheet->write_string($row++, $col, "Source SQL:", $formats{minor_heading_format});
+      $worksheet->write_string($row++, $col, $sql, $formats{minor_heading_format});
+      return 5;   # return number of rows written, used by single_tab
+   }
+
+   my $columns = $sth->{NAME};
+
+   # if the greenbar column is a column name, get the index for that column name
+   if ( defined($gbcol) && $gbcol !~ m/^\d/ ) {
+      $gbcol = $sth->{NAME_uc_hash}->{uc($gbcol)};
+   }
+
+   $worksheet->write_row($row++, $col, $columns, $formats{minor_heading_format});
+
+   my $rowcount = 0;
+   while (my @row = $sth->fetchrow_array()) {
+
+      if ( defined($gbcol) ) {
+         if ( $gbvalue ne ($row[$gbcol] || "") ) {
+            $gbvalue = $row[$gbcol] || "";
+            $gbtoggle++;
+         }
+      }
+
+      if ( defined($gbcol) && ($gbtoggle % 2 == 0) ) {
+         $worksheet->write_row($row++, $col, \@row, $formats{greenbar_format});
+         $gbtoggle = 0;
+      }
+      else {
+         $worksheet->write_row($row++, $col, \@row, $format);
+      }
+      $rowcount++;
+
+   }
+   $sth->finish();
+
+   if ($rowcount == 0) {
+      $worksheet->write($row++, $col, "No rows found", $formats{warning_format});
+   }
+   return $rowcount;
+}
+
+
+##############################################################################
+
+sub do_adhoc($$;$) {
+   my ($sql, $tab_name, $gbcol) = @_;
+
+   if ( $opts{max_rows} > 0 ) {
+      $sql = "select * from (\n"
+           . $sql
+           . "\n) where rownum < $opts{max_rows}";
+   }
+
+
+   if ( $opts{verbose} || $opts{test_only} ) {
+      print STDOUT "TAB NAME :", $tab_name, "\n";
+      print STDOUT "GB COLUMN:", $gbcol, "\n" if ( defined($gbcol) );
+      print STDOUT "SQL      :\n", $sql, "\n\n";
+   }
+
+   unless ( $opts{test_only}) {
+      if ( !exists($opts{single_tab}) || ($opts{single_tab} && !exists($opts{_num_worksheets})) ) {
+         my $worksheet = $workbook->add_worksheet($tab_name);
+         $worksheet->freeze_panes(1, 0); # Freeze the first row
+         $worksheet->set_column('A:AZ',$COL_WIDTH);  # set column width
+         $opts{_num_worksheets} += 1;
+         $opts{_current_worksheet} = $worksheet;
+      }
+      
+      $opts{_current_row} += dump_query($opts{_current_worksheet}, $sql, $opts{_current_row}, undef, undef, $gbcol);
+      if ( exists($opts{single_tab}) ) {
+         $opts{_current_row} += $opts{single_tab};
+      }
+      else {
+         $opts{_current_row} = 0;
+      }
+   }
+}
+
+
+# -------------------------------------------------------------------------
+# define excel formats
+sub define_formats($) {
+   my ($wkbk_ref) = @_;
+   my %fmt;
+
+   $fmt{num_format} = $wkbk_ref->add_format();
+   $fmt{num_format}->set_num_format('#0');
+
+   $fmt{formated_num_format} = $wkbk_ref->add_format();
+   $fmt{formated_num_format}->set_num_format('#,##0');
+
+   $fmt{percent_format} = $wkbk_ref->add_format();
+   $fmt{percent_format}->set_num_format('0.0%');
+
+   $fmt{text_format} = $wkbk_ref->add_format();
+   $fmt{text_format}->set_align('left');
+   $fmt{text_format}->set_num_format('@');
+
+   $fmt{heading_format} = $wkbk_ref->add_format();
+   $fmt{heading_format}->set_bold();
+   #$fmt{heading_format}->set_align('right');
+
+   $fmt{minor_heading_format} = $wkbk_ref->add_format();
+   $fmt{minor_heading_format}->set_size(8);
+   $fmt{minor_heading_format}->set_bold();
+
+   $fmt{total_format} = $wkbk_ref->add_format();
+   $fmt{total_format}->set_bold();
+   $fmt{total_format}->set_top(6);
+   $fmt{total_format}->set_num_format('#,##0');
+
+   $fmt{warning_format} = $wkbk_ref->add_format();
+   $fmt{warning_format}->set_color('red');
+   $fmt{warning_format}->set_bold();
+
+   $fmt{error_format} = $wkbk_ref->add_format();
+   $fmt{error_format}->set_color('red');
+   $fmt{error_format}->set_bold();
+   #$fmt{error_format}->set_text_wrap();
+
+   # color options are integers from 8-63
+   $fmt{greenbar_format} = $wkbk_ref->add_format();
+   $fmt{greenbar_format}->set_bg_color('42');  # light green
+   $fmt{greenbar_format}->set_num_format('#0');
+   if ( $opts{greenbar_color} ) {
+      $fmt{greenbar_format}->set_bg_color($opts{greenbar_color});
+   } 
+
+   return %fmt;
+}
+
+# -------------------------------------------------------------------------
+# Parse sql file into individual sql queries.
+# Return an array of hashes data structure:
+#   @ret = (
+#      {
+#         sql   => "select...",
+#         label => "the label",  
+#         gbcol => "greenbar_column", 
+#      },
+#
+# -------------------------------------------------------------------------
+sub parse_sql() {
+
+   my @ret;    # array of hashes
+   my $txt;
+   my $label;
+   my $greenbar_col;
+
+   if ( $opts{sql_file} ) {
+      open(IN, "< $opts{sql_file}") || die "Can't open sql file $opts{sql_file}\n";
+   } else {
+      open(IN, "< &STDIN") || die "Can't open IN as STDIN\n";
+   }
+
+   # parse sql, looking for an ending ; or /
+   #
+   # !!!!! See Notes in usage section about what we can parse!  !!!!!! 
+   #
+   while (my $line = <IN>) {
+
+      # if blank line, start over
+      if ( $line =~ m/^\s*$/i ) {
+         $txt = $label = $greenbar_col = undef;
+         next;
+      } 
+
+      # find special label comments
+      elsif ( $line =~ m/^\s*--\s*SPREADSHEET_TAB_NAME\s*=\s*(.*)$/i ) {
+         $label = $1;
+         next;
+      } 
+
+      # find special greenbar column comments
+      elsif ( $line =~ m/^\s*--\s*GREENBAR_COLUMN_NAME\s*=\s*(.*)$/i ) {
+         $greenbar_col = $1;
+         next;
+      } 
+
+      # ignore any other comment lines
+      elsif ( $line =~ m/^\s*--/ ) {
+         next;
+      }
+
+      # find terminators:
+      #   ; or / followed by space or comment
+      #   save any sql before the terminator
+      elsif ( $line =~ m/^(.*)(;|^\/)\s*(--|\/\*|$)/i ) {
+         $txt .= $1;
+         my %tmp;
+         $tmp{sql} = $txt;
+
+         if ( defined($label) ) {
+            $tmp{label} = $label;
+         } else {
+            $tmp{label} = $GENERIC_TAB_NAME . (scalar(@ret) + 1);
+         }
+
+         if ( defined($greenbar_col) ) {
+            $tmp{gbcol} = $greenbar_col;
+         }
+
+         # before adding, make sure it's a select query, since that's the only
+         # thing we can really handle - or that makes sense for $this.
+         push(@ret, \%tmp) if ( $txt =~ m/^\s*select/i );
+         $txt = $label = $greenbar_col = undef;
+      }
+
+      # line of sql text, save it
+      else {
+         $txt .= $line;
+      }
+   }
+
+   amp_substitution(\@ret) if ( exists($opts{amp}) );
+   return(@ret);
+}
+
+
+# -------------------------------------------------------------------------
+# Perform sqlplus "&" substitutions on the sql
+#
+# If any --amp parameters were passed in to $this, the Getopt::Long module will
+# populate the amp option with a reference to a hash that contains all the
+# key=value pairs from all --amp parameters received on the command line.  So
+# using the example in the usage() message, we would have:
+#
+#           'amp' => {
+#                    'my_id' => '100',
+#                    '1' => 'myschema',
+#                    '2' => 'mytable'
+#                  },
+#
+# We will build a regex for each %$amp key and perform a global substitution
+# in every sql query in the @sql reference passed to us.
+# -------------------------------------------------------------------------
+sub amp_substitution($) {
+   # We get a reference to the @sql array that parse_sql() returns
+   my $sqlref = shift;
+
+   # for each query that was parsed
+   for my $s (@$sqlref) {
+      # %opts has a ref to the amp hash
+      my %amps = %{$opts{amp}};
+      for my $parm ( keys(%amps) ) {
+         # build a regex that will find &1, &&1, &1. or &&1.
+         my $find_regex = qr(&{1,2}$parm\.?);
+         $$s{sql} =~ s/$find_regex/$amps{$parm}/g;
+      }
+   }
+}
+
+# -------------------------------------------------------------------------
+# Parse comand line options, check for required opts and set defaults
+# -------------------------------------------------------------------------
+sub get_opts() {
+   Getopt::Long::Configure ("bundling");   # allow -vvv
+   my $ok = GetOptions(\%opts,
+      'help|h',
+      'version',
+      'verbose|v+',    # the trailing + allows multiple -v 
+      'test_only|t',
+      'userpass|u=s',
+      'spreadsheet|o=s',
+      'sql_file|f=s',
+      'max_rows|m=i',
+      'greenbar|g=i',
+      'single_tab|s=i',
+      'greenbar_color|c=i',
+      'parms|p=s',
+      'amp|a=s%',      # sqlplus ampersand substitution variables hash
+   );
+   exit(1) if not $ok;
+   usage() if ( exists($opts{help}) );
+   die "$VERSION" . "\n" if ( exists($opts{version}) );
+
+   # required parms
+   unless ( exists($opts{test_only}) ) {
+      die "$this: missing required -u|--userpass option\n" unless ( exists($opts{userpass}) );
+      die "$this: user/password is not formed correctly\n" if ( $opts{userpass} !~ m?.+/.+? );
+      ($opts{username}, $opts{password}) = split('/', $opts{userpass});
+      # peel off database name, if present.
+      $opts{username} =~ s/@(.*)$//;
+      $opts{dbname} = $1 || "";
+
+      die "$this: missing required -o|--spreadsheet option\n" unless ( exists($opts{spreadsheet}) );
+      die "Spreadsheet file must have .xls extension\n" unless ( $opts{spreadsheet} =~ m/\.xls/ );
+   }
+
+   # optional parms
+   $opts{max_rows} = 0 unless(exists($opts{max_rows}));
+   die "-m|--max_rows must be supplied with an integer value\n" if ( $opts{max_rows} !~ m/^\d+$/ );
+
+   die "-g|--greenbar must be supplied with an integer value\n" 
+      if ( exists($opts{greenbar}) && $opts{greenbar} !~ m/^\d+$/ );
+
+   $opts{_current_row} = 0;
+   die "-s|--single_tab must be supplied with an integer value\n" 
+      if ( exists($opts{single_tab}) && $opts{single_tab} !~ m/^\d+$/ );
+
+   if ( exists($opts{greenbar_color}) ) {
+      die "-c|--greenbar_color must be supplied with an integer value\n" 
+         if ( $opts{single_tab} !~ m/^\d+$/ );
+      die "Invalid greenbar color.  Must be an integer between 8 and 63\n"
+         if ( $opts{greenbar_color} < 8 || $opts{greenbar_color} > 63 );
+   }
+
+   if ( exists($opts{parms}) ) {
+      $opts{verbose}   = 1 if ( $opts{parms} =~ /^v$/i );
+      $opts{test_only} = 1 if ( $opts{parms} =~ /^t$/i );
+   }
+   #print Dumper(\%opts);  exit 1;
+}
+
+# -------------------------------------------------------------------------
+# convert text Unix to DOS format
+# -------------------------------------------------------------------------
+sub unix2dos($) {
+   my $str = shift;
+
+   $str =~ s/\n/\r\n/g;
+   return $str;
+}
+
+

@@ -1,0 +1,57 @@
+
+SQL*Loader: Release 8.0.5.1.1 - Production on Mon Jun 19 15:47:30 2000
+
+(c) Copyright 1998 Oracle Corporation.  All rights reserved.
+
+Control File:   dni_age_ranges.ctl
+Data File:      dni_age_ranges.csv
+  Bad File:     dni_age_ranges.bad
+  Discard File: dni_age_ranges.disc 
+ (Allow all discards)
+
+Number to load: ALL
+Number to skip: 0
+Errors allowed: 1000
+Continuation:    none specified
+Path used:      Direct
+
+Table DNI_AGE_RANGES, loaded from every logical record.
+Insert option in effect for this table: REPLACE
+TRAILING NULLCOLS option in effect
+
+   Column Name                  Position   Len  Term Encl Datatype
+------------------------------ ---------- ----- ---- ---- ---------------------
+AGE_RANGE                           FIRST     *   ,       CHARACTER            
+DNI_UPPER                            NEXT     *   ,       CHARACTER            
+DNI_LOWER                            NEXT     *   ,       CHARACTER            
+YEAR_UPPER                           NEXT     *   ,       CHARACTER            
+YEAR_LOWER                           NEXT     *   ,       CHARACTER            
+AGE_CODE                             NEXT     *   ,       CHARACTER            
+
+Column AGE_RANGE is NULL if AGE_RANGE = BLANKS
+Column DNI_UPPER is NULL if DNI_UPPER = BLANKS
+Column DNI_LOWER is NULL if DNI_LOWER = BLANKS
+Column YEAR_UPPER is NULL if YEAR_UPPER = BLANKS
+Column YEAR_LOWER is NULL if YEAR_UPPER = BLANKS
+Column AGE_CODE is NULL if AGE_CODE = BLANKS
+
+
+Table DNI_AGE_RANGES:
+  40 Rows successfully loaded.
+  0 Rows not loaded due to data errors.
+  0 Rows not loaded because all WHEN clauses were failed.
+  0 Rows not loaded because all fields were null.
+
+Bind array size not used in direct path.
+Space allocated for memory besides bind array:        0 bytes
+
+Total logical records skipped:          0
+Total logical records read:            40
+Total logical records rejected:         0
+Total logical records discarded:        0
+
+Run began on Mon Jun 19 15:47:30 2000
+Run ended on Mon Jun 19 15:47:31 2000
+
+Elapsed time was:     00:00:01.37
+CPU time was:         00:00:00.14     (Ma

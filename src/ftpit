@@ -1,0 +1,374 @@
+#! /usr/bin/perl
+# ===================================================================
+# $Id: ftpit 707 2007-06-27 18:50:13Z mjeffe $
+#
+# Another bug-ugly utility from Matt's code archive.
+#
+# A wrapper for Net::Ftp, helps parameterize the functionality
+# and simplify error checking.  See usage function for more details.
+#
+# Revisions:
+#  Date         userid    revision made
+#  -----------  ------    -------------------------------------------
+#  18-NOV-1999  mjeffe    created
+#  28-FEB-2007  mhorto    Don't die if no file found - that's really
+#                         not an error - user must determine resulting
+#                         list is empty, but error code should be 0
+#  14-May-2007  mhorto    Verbose messages go to stderr
+# ===================================================================
+
+
+use Getopt::Long;
+use Net::FTP;
+use File::Basename;
+
+
+# check input parameters
+$Getopt::Long::ignorecase = 1;
+%opts = ();
+$result = GetOptions(\%opts,'server:s','user:s','pass:s','remote_dir:s',
+                            'mode:s','mark:s','debug','get','verbose','list', 'dir');
+our $use_remote_dir = 0;
+verify_opts();
+
+
+# ftp the files, checking for errors between each step
+$ftp = Net::FTP->new($opts{"server"});
+#die "ftpit: can\'t get ftp object: $@\n" if !defined($ftp);
+cmd_ok($ftp,"new");
+
+#$ftp->timeout(30);
+
+if ( defined($opts{"debug"}) ) {
+   $ftp->debug(1);
+}
+
+
+$result = $ftp->login($opts{"user"},$opts{"pass"});
+cmd_ok($result,"login");
+
+if ($use_remote_dir == 1)
+{
+  $result = $ftp->cwd($opts{"remote_dir"});
+  cmd_ok($result,"cwd");
+}
+
+$result = $ftp->type($opts{"mode"});
+cmd_ok($result,"type");
+
+# if everything ok so far, then transfer the files
+$fnum = 0;
+while($file = $ARGV[$fnum])
+{
+   my $localf, $remotef;
+
+   $fnum++;
+    
+   # parse the file name, for local and remote names
+   ($localf, $remotef) = split /:/, $file;
+   if ( ! defined($remotef) ) {
+      $remotef = $file;
+   }
+
+   if ( defined($opts{"verbose"}) ) {
+      print STDERR "local file name: $localf, remote file name: $remotef\n";
+   }
+
+   # get 
+   if ( defined($opts{"get"}) ) 
+   {   
+      $result = $ftp->get($remotef, $localf);
+      cmd_ok($result,"get");
+      print "$file successfully retrieved from ",$opts{"server"},":",
+             $opts{"remote_dir"},"\n";
+      if ( defined($opts{"mark"}))
+      {
+         my $new_remote_name="$remotef".$opts{"mark"};
+         $result = $ftp->rename($remotef, $new_remote_name);
+         cmd_ok($result, "mark");
+         print "$remotef successfully renamed to $new_remote_name\n";
+      }
+   }
+   elsif ( defined ($opts{"list"}) )
+   {
+      #print "HERE, $localf \n";
+      if ($use_remote_dir == 1)
+      {
+         $remote_file = $opts{"remote_dir"} . "/" . "$localf";
+      }
+      else
+      {
+         $remote_file = "$localf";
+      }
+      @list = $ftp->ls($remote_file);
+      #print @list . "\n";
+      # The ls returns the path as well as filename - strip the path
+      foreach $item (@list)
+      {
+        print basename $item . "\n";
+      }
+      if ( @list eq 0 )
+      {
+        # die "File $remote_file not found"
+        # If we got this far, assume that login/cd worked fine, just 
+        # didn't find any files.  That's not a fatal error.
+        print STDERR "File $remote_file not found"
+      }
+   }
+   elsif ( defined ($opts{"dir"}) )
+   {
+      #print "HERE, $localf \n";
+      if ($use_remote_dir == 1)
+      {
+         $remote_file = $opts{"remote_dir"} . "/" . "$localf";
+      }
+      else
+      {
+         $remote_file = "$localf";
+      }
+      @list = $ftp->dir($remote_file);
+      #print @list . "\n";
+      # The ls returns the path as well as filename - strip the path
+      foreach $item (@list)
+      {
+        print $item . "\n";
+      }
+      if ( @list eq 0 )
+      {
+        #die "File $remote_file not found"
+        # If we got this far, assume that login/cd worked fine, just
+        # didn't find any files.  That's not a fatal error.
+        print STDERR "File $remote_file not found"
+      }
+   }
+   # or default put
+   else
+   {
+      $result = $ftp->put($localf, $remotef);
+      cmd_ok($result,"put");
+      print "$file successfully sent to ",$opts{"server"},":",
+             $opts{"remote_dir"},"\n";
+   }
+}
+
+print STDERR "\n";
+
+$ftp->quit();
+
+
+
+####################################################################
+#                          SUBROUTINES                             #
+####################################################################
+
+sub cmd_ok
+{
+   my($retcd,$cmd) = @_;
+   # verify that the ftp command was successfull
+   if ( ! $retcd )
+   {
+      print STDERR "ftpit: \"$cmd\" error...\n";
+
+      # if we don't even have an ftp object then don't go on
+      if ( $cmd eq "new") {
+         print STDERR "   can't get ftp object: $@\n";
+         print STDERR "ftpit: aborting...\n";
+         exit 1;
+      }
+
+      # for put commands, if the file does not exist then it would
+      # output the last ftp->message, which is from the previous
+      # command.  This will suppress that.
+      if ( !($cmd eq "put") ) {
+         print STDERR "  ",$ftp->code(),"  ",$ftp->message();
+      }
+
+      print STDERR "ftpit: aborting...\n";
+      $ftp->quit();
+      exit 1;
+   }
+}
+
+
+# -----------------------------------------------------------------
+sub show_usage
+{
+   $me = basename $0;
+   $myversion = '$Id: ftpit 707 2007-06-27 18:50:13Z mjeffe $';
+
+   print "\n";
+   print "Usage:\n";
+   print "  ftpit --server=server-name --pass=password --user=username\n";
+   print "        [--remote_dir=remote_directory] [--mode=ascii|binary]\n";
+   print "        [--mark=mark_str] [--debug] [--get|list|dir] [--verbose] filelist|mask\n";
+   print "\n";
+   print "Description:\n"; 
+   print "  $me is a wrapper for Net::FTP, designed for transfering\n";
+   print "  files from within a shell script.  There are two advantages\n";
+   print "  to using this rather than a here document to pass commands to\n";
+   print "  the ftp client:\n";
+   print "    1) It reduces and cleans up the output for the log files.\n";
+   print "    2) It checks for errors after each step, and reports them.\n";
+   print "\n";
+   print "Switches:\n";
+   print "  required:\n";
+   print "    filelist      List of file names to transfer.  File names\n";
+   print "                  Can have two forms, local_name:remote_name or\n";
+   print "                  file_name.  If the latter form is used then\n";
+   print "                  the name of the file on the source system is\n";
+   print "                  used for the file on the destination system.\n";
+   print "                  In list mode, specify a filename or mask pattern\n";
+   print "                  (enclose masks w/ wildcards in quotes)\n";
+   print "    --server=     This is the remote server to connect to\n";
+   print "    --user=       The username to use to log in with\n";
+   print "    --pass=       The password used to log in with\n";
+   print "\n";
+   print "  optional:\n";
+   print "    --remote_dir= The directory where the files will be put/get\n";
+   print "    --mode=       The transfer type.  Options are ascii or binary\n";
+   print "                  defaults to binary.\n";
+   print "    --mark=       In get mode, rename remote file(s) by appending string mark_str.\n";
+   print "    --debug       Turns on all output from commands\n";
+   print "    --get         Does a get from the remote_dir on the files\n";
+   print "                  in filelist.  Default is put.\n";
+   print "    --list        Returns a list of files matching mask on remote_dir.\n";
+   print "                  Default is put.  IF NO FILE IS FOUND, NO ERROR IS RETURNED\n";
+   print "                  SO YOU MUST CHECK FOR EMPTY LIST RETURNED FROM THE TOOL\n";
+   print "    --dir         Returns a full list of files/sizes matching mask on remote_dir.\n";
+   print "                  Default is put.  IF NO FILE IS FOUND, NO ERROR IS RETURNED\n";
+   print "                  SO YOU MUST CHECK FOR EMPTY LIST RETURNED FROM THE TOOL\n";
+   print "    --verbose     Outputs a list of the options used for transfer.\n";
+   print "\n";
+   print "cvs version: $myversion \n";
+   print "Report any comments or bugs to Matt Jeffery - mjeffe\@acxiom.com\n";
+}
+
+
+# ---------------------------------------------------------------
+sub verify_opts
+{
+   # ---------------------------
+   #  check for required command
+   #  line options
+   # ---------------------------
+
+   if ( $result == 0 ) 
+   {
+      print "ftpit: problem with command line arguments...\n";
+      exit 1; 
+   }
+   elsif ( !defined($opts{"server"}) )
+   {
+      print "ftpit: option --server is required...\n";
+      show_usage();
+      exit 1;
+   }
+   elsif ( !defined($opts{"user"}) )
+   {
+      print "ftpit: option --user is required...\n";
+      show_usage();
+      exit 1;
+   }
+   elsif ( !defined($opts{"pass"}) )
+   {
+      print "ftpit: option --pass is required...\n";
+      show_usage();
+      exit 1;
+   }
+   elsif ( scalar(@ARGV) == 0 and !defined($opts{"list"}) )
+   {
+      print "ftpit: there is no file to ftp...\n";
+      show_usage();
+      exit 1;
+   }
+   
+   # ---------------------------
+   #  now set defaults
+   # ---------------------------
+   
+   # mode ascii/binary
+   if ( defined($opts{"mode"}) )
+   {
+      if ( uc($opts{"mode"}) eq "ASCII" || uc($opts{"mode"}) eq "A")  {
+         $opts{"mode"} = "A"; 
+      }
+      elsif ( uc($opts{"mode"}) eq "BINARY" || uc($opts{"mode"}) eq "B" ) {
+         $opts{"mode"} = "I"; 
+      }
+      else {
+         print "ftpit: unsuported mode\n";
+         show_usage();
+         exit 1;
+      }
+   }
+   else {
+      $opts{"mode"} = "I";
+   }
+
+   # debug mode
+   if ( defined($opts{"debug"}) )
+   {
+      $opts{"verbose"} = 1;
+   }
+   
+   if ( defined($opts{"remote_dir"}) )
+   {
+      if ($opts{"remote_dir"} eq "." or $opts{"remote_dir"} eq " " or $opts{"remote_dir"} eq "")
+      {
+         $use_remote_dir=0;
+      }
+      else
+      {
+         $use_remote_dir=1;
+      }
+   }
+   else
+   {
+      $use_remote_dir=0;
+   }
+      
+
+   # verbose output
+   if ( defined($opts{"verbose"}) )
+   {
+      print STDERR "ftpit: ftp transfer options\n";
+      print STDERR "  server = ",$opts{"server"},"\n";
+      print STDERR "  user = ",$opts{"user"},"\n";
+      # print "  pass = ",$opts{"pass"},"\n";
+      print STDERR "  pass = xxxxxxxx\n";
+      if ($use_remote_dir == 1)
+      {
+         print STDERR "  remote_dir = ",$opts{"remote_dir"},"\n";
+      }
+      else
+      {
+         print STDERR "  remote_dir = (not defined)\n";
+      }
+      if ( defined($opts{"debug"}) ) {
+         print STDERR "  debug = on\n";
+      } else {
+         print STDERR "  debug = off\n";
+      }
+
+      if ( defined($opts{"get"}) ) 
+      {
+         print STDERR "  get = on\n";
+         if ( defined($opts{"mark"}))
+         {
+           print STDERR "  (rename by appending string ", $opts{"mark"},"\n\n";
+         }
+      } 
+      elsif (defined($opts{"list"}) ) 
+      {
+         print STDERR "  list = on\n";
+      } 
+      else 
+      {
+         print STDERR "  put = on\n";
+      } 
+      
+      print STDERR "  verbose = on\n";
+   }
+
+}
+
