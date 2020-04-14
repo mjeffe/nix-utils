@@ -206,7 +206,7 @@ Before running this, you should source I<ecr.conf>.
 
 =head1 BUGS
 
-Please report bugs or enhancement requests to Matt Jeffery - I<mjeffe@acxiom.com>.
+Please report bugs or enhancement requests to Matt Jeffery - I<matt@mattjeffery.dev>.
 
 =cut
 

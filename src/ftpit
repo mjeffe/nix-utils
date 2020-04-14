@@ -240,7 +240,7 @@ sub show_usage
    print "    --verbose     Outputs a list of the options used for transfer.\n";
    print "\n";
    print "cvs version: $myversion \n";
-   print "Report any comments or bugs to Matt Jeffery - mjeffe\@acxiom.com\n";
+   print "Report any comments or bugs to Matt Jeffery - matt\@mattjeffery.dev\n";
 }
 
 

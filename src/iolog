@@ -167,7 +167,7 @@ NOTES
    version of iostat, it will produce date and time in the reports, thereby
    allowing reports to span midnight.
 
-   Report any comments or bugs to Matt Jeffery - mjeffe\@acxiom.com
+   Report any comments or bugs to Matt Jeffery - matt\@mattjeffery.dev
    cvs $cvs_id
 
 EOF
