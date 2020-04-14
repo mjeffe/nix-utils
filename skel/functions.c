@@ -4,93 +4,79 @@
  * Usefull C code snippets
  * *************************************************************************/
 
-/*  Trims all trailing white space from strings */
-int RightTrim( char *s) 
-( 
+/*************************************************************************
+ * trims leading white space from a string
+ *
+ * #include <ctype.h>
+ ************************************************************************/
+int ltrim(char *s) {
+    while (isspace((unsigned char)*s))
+        s++;
+
+    return s;
+}
+
+/*************************************************************************
+ * trims trailing white space from a string
+ *
+ * #include <ctype.h>
+ ************************************************************************/
+int rtrim(char *s) {
+    char *p;
+
+    p = s + strlen(s) - 1; 
+    while (p > s && isspace((unsigned char)*p))
+        p--;
+
+    p[1] = '\0'; 
+    return(s); 
+}
+
+/*************************************************************************
+ * trims trailing white space from a string
+ *
+ * No lib dependency
+ ************************************************************************/
+int rtrim(char *s) {
     int  i; 
-    i = strlen(s)-1; 
+    i = strlen(s) - 1; 
     while ((s[i] == ' ' || s[i] == '\t' || s[i] == '\n') && i >= 0) 
         i--; 
     s[i+1] = '\0'; 
     return(i+1); 
-) 
+}
 
+/*************************************************************************
+ * returns true if the string is a comment line or blank line
+ * #include <ctype.h>
+ ************************************************************************/
+int is_ignorable_line(char *s) {
+   char *p = s;
 
-void vTrimRight (char *szTrimMe) 
-( 
-     int i = -1; 
+   /* skip leading white space */
+   //while ( *p == ' ' || *p == '\t' )
+   while (isspace((unsigned char)*p))
+      p++;
 
-     i = strlen (szTrimMe); 
+   if ( *p == COMMENT_CHAR || *p == '\n' || *p == '\r' )
+      return TRUE;
 
-     i--; 
-     while (szTrimMe[i] == ' ' && i >= 0) 
-     ( 
-          i--; 
-     ) 
+   return FALSE;
+}
 
-     szTrimMe[i+1] = NULL; 
-) 
+/*************************************************************************
+ * remove newline and/or carriage return from end of a string
+ * return length of new modified string
+ ************************************************************************/
+static int chomp(char *s) {
+   char *p;
 
-void vTrimLeft (char *szTrimMe) 
-( 
-     char szHold[1024]; 
-     sprintf (szHold, "%s", szTrimMe); 
-     int i = 0; 
-     int iLength; 
+   p = s + strlen(s) - 1;
 
-     iLength = strlen (szHold); 
+   while (p >= s && (*p == '\n' || *p == '\r'))
+      *(p--) = 0;
 
-     while (szHold[i] == ' ' && i < iLength) 
-     ( 
-          i++; 
-     ) 
-
-     sprintf (szTrimMe, "%s", &szHold[i]); 
-)
-
-/*
- * Here is some code that will trim the right or left or both that I use quite often: 
- */
-
-#define ALLSPACES  0     /* For StrTrimLeft/Right()*/ 
-
-void StrShrink(char *String_) 
-( 
-  StrTrimLeft(String_,ALLSPACES); 
-  StrTrimRight(String_,ALLSPACES); 
-) 
-
-void StrTrimLeft(char *String_, int Limit_) 
-( 
-  int i, j; 
-
-  i = 0; 
-  while(String_[i] == ' ') 
-   i++; 
-  if((Limit_ > 0) && (i > Limit_)) 
-   i = Limit_; 
-  for(j = 0; i < strlen(String_); i++) 
-   ( 
-    String_[j] = String_[i]; 
-    j++; 
-   ) 
-  String_[j] = '0'; 
-) 
-
-void StrTrimRight(char *String_, int Limit_) 
-( 
-  int  i; 
-
-  i = strlen(String_) - 1; 
-  if(i == 0) 
-   return; 
-  while((String_[i] == ' ') || (String_[i] == 'r') || (String_[i] == 'n')) 
-   i--; 
-  if((Limit_ > 0) && (i < Limit_)) 
-   i = Limit_ - 1; 
-  String_[i + 1] = '0'; 
-)
-
-
+   return (p - s + 1);
+}
 
 
