@@ -1,6 +1,91 @@
 # ---------------------------------------------------------------------------
-# Useful shell script snippets
+# Useful shell script snippets or functions 
 # ---------------------------------------------------------------------------
+
+
+# ==========================================================================
+#
+# These functions are not immediately useful, they are examples that you can
+# copy/modify to suit for a particular situation
+#
+# ==========================================================================
+
+
+# ---------------------------------------------------------------------------
+_cleanup() {
+    _say "cleaning up..."
+    #cd $BASEDIR
+    #rm -fr $tmpdir
+}
+
+# ---------------------------------------------------------------------------
+_email() {
+    msg="$1" # message you want to send
+
+   _say "sending email"
+   for e in $email_recipients; do
+       #cat <<EOF | /usr/sbin/sendmail -f matt.jeffery@arkansas.gov matt.jeffery@arkansas.gov
+       cat <<EOF | /usr/bin/mailx -t
+From: matt.jeffery@arkansas.gov
+To: $e
+Subject: ERROR: some process
+
+$1
+
+EOF
+
+done
+}
+
+# ---------------------------------------------------------------------------
+_runsql() {
+   sqlf=$1
+   base=`basename $sqlf .sql`
+   _say "running job: $sqlf";
+   psql -X -a -U $dbuser -d $dbname -h $dbhost -f $sqlf > logs/$base.log
+   _chkerr $? $sqlf
+}
+
+# ---------------------------------------------------------------------------
+_loadcsv() {
+  # spawn subshell so as not to polute environment with .env vars
+  (
+    f="$1"
+    base=$(basename $f .csv)
+    _say "loading $f"
+
+    source .env
+    export PGPASSWORD="$DB_PASSWORD"
+    pgloadcsv -u $DB_USERNAME -d $DB_DATABASE -h $DB_HOST --drop -c -t stg_$base $f
+    _chkerr "$?" "pgloadcsv of $f"
+  )
+}
+
+# ---------------------------------------------------------------------------
+_usage()
+{
+   cat <<EOF
+   Description: do something
+
+   Usage: `basename $0` [-h?] [-f filename] [-d YYYYMMDD]
+
+   Options:
+      Default is to fetch today's file and load it.  The following options
+      change this behavior.
+
+      -f filename    Skips the fetch and instead loads the local filename
+      -d YYYYMMDD    Fetches and loads file for YYYYMMDD
+      -h -?          Prints this usage message
+
+EOF
+}
+
+# ==========================================================================
+#
+# The remainder are snippets and idioms useful in shell scripts
+#
+# ==========================================================================
+
 
 # ------------------------------------------------------------------------
 # prompt user for input

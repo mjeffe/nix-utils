@@ -1,23 +1,42 @@
 # ---------------------------------------------------------------------------
-# Useful shell script helper functions. You could source this directly but
-# probably don't want to because there are a number of functions that really
-# need to be customized for your specific use case.
+# Shell script helper functions I commonly use. Source this near the top
+# of your script.
+#
+# There are also functions that I commonly use, but need to be customized for
+# each application. These live in nix-utils/skel/snippets.sh
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# you should override this AFTER you source this file
+# ---------------------------------------------------------------------------
+_cleanup() {
+    _say "cleaning up..."
+    _say "This is a generic cleanup script and it doesn't do anything!"
 
-# ==========================================================================
-#
-# This group of functions *could* be used as is
-#
-# ==========================================================================
+    # do your cleanup
+    #cd $BASEDIR
+    #rm -fr $tmpdir
+}
+
 
 # ---------------------------------------------------------------------------
 _sigint_handler() {
    echo "Ctrl-C pressed, aborting..."
-   _cleanup
+   _cleanup   # try to run your cleanup handler if you have one
    exit 1
 }
 trap _sigint_handler SIGINT
+
+# ---------------------------------------------------------------------------
+_die() {
+    msg="$1"   # optional error message you want printed
+    rc=${2:-1} # optional return code to die with
+
+    if [ -n "$msg" ]; then
+        _say "$msg"
+    fi
+    exit $rc
+}
 
 # ---------------------------------------------------------------------------
 _say() {
@@ -25,9 +44,11 @@ _say() {
    echo "$dt: $1"
 }
 
-
 # ---------------------------------------------------------------------------
-_chkerr() {
+# simple version, just accepts $?
+# see below for more complex version
+# ---------------------------------------------------------------------------
+_chkerr_simple() {
    if [ $1 -ne 0 ]; then
       _say "$2 exited with error (rc=$1)"
       #_email "ERROR: $2"
@@ -36,97 +57,58 @@ _chkerr() {
 }
 
 # ---------------------------------------------------------------------------
-_die() {
-  _say "$1"
-  exit 1
+# check the return code for non zero status
+#
+# Call like this after running a command:
+#
+#   my_script.sh
+#   chkerr $? "something went wrong" my_script.sh
+#
+# Or like this after running a pipeline:
+#
+#   `foo | bar | baz`
+#   chkerr "${PIPESTATUS[*]} $?"
+# ---------------------------------------------------------------------------
+#typeset -xf chkerr
+_chkerr() {
+    rc_list="$1"      # return codes
+    msg="$2"          # error message you want displayed if rc > 0
+    script="$3"       # OPTIONAL name of the script or command who's return code we are checking
+
+    # Process $rc in a loop, to support receiving an array of exit codes, for
+    # pipelines (obtained from $PIPESTATUS in bash).  Note that they must be
+    # passed as a single argument, typically by quoting.  In such a case, make
+    # sure you're using bash, and use this syntax: chkerr "${PIPESTATUS[*]} $?"
+    # The quotes, braces, and * are all required for it to work properly.
+    # $PIPESTATUS is only set for pipelines, so the $? at the end there ensures
+    # that if you convert a pipeline to a single command and don't convert the
+    # chkerr line, the error will still be caught properly
+
+    for rc in $rc_list; do
+        if [ "$rc" -ne 0 ]; then
+            _say "ERROR: $msg"
+            echo -n "ERROR during $this: return code $rc"
+            if [ -n "$script" ]; then echo -n " returned by $script"; fi
+            #_email "ERROR: $2"
+            _die
+        fi
+    done
 }
+#export chkerr
 
 # ---------------------------------------------------------------------------
-_cleanup() {
-  # cleanup
-  _say "cleaning up"
-  #rm -fr $tmpdir
-}
-
-# ---------------------------------------------------------------------------
-_loadcsv() {
-  # spawn subshell so as not to polute environment with .env vars
-  (
-    f="$1"
-    base=$(basename $f .csv)
-    _say "loading $f"
-
-    source .env
-    export PGPASSWORD="$DB_PASSWORD"
-    pgloadcsv -u $DB_USERNAME -d $DB_DATABASE -h $DB_HOST --drop -c -t stg_$base $f
-    _chkerr "$?" "pgloadcsv of $f"
-  )
-}
-
+# fetch variables's value from .env key=value type file
+#
+# my_var=`_read_dot_env_var DBNAME`
 # ---------------------------------------------------------------------------
 _read_dot_env_var() {
   if [ -z "$1" ]; then
-    _say "Need an argument of the variable name you are looking for"
+    _say "missing required variable argumentr"
     exit 1
   fi
 
   ENV_VAL=$(egrep "^${1}=" .env | cut -d '=' -f 2)
 
   echo ${ENV_VAL}
-}
-
-# ==========================================================================
-#
-# Functions in this group are not immediately useful, they are examples that
-# you can copy/modify to suit for a particular situation
-#
-# ==========================================================================
-
-# ---------------------------------------------------------------------------
-_email() {
-   _say "sending email"
-   for e in $email_recipients; do
-       #cat <<EOF | /usr/sbin/sendmail -f matt.jeffery@arkansas.gov matt.jeffery@arkansas.gov
-       cat <<EOF | /usr/bin/mailx -t
-From: matt.jeffery@arkansas.gov
-To: $e
-Subject: ERROR: GED daily gedts.sh script
-
-$1
-
-The `pwd`/gedts.sh script controls the daily update. Header notes
-in this script may be helpful for debugging.
-EOF
-
-done
-}
-
-# ---------------------------------------------------------------------------
-_runsql_example()
-{
-   sqlf=$1
-   base=`basename $sqlf .sql`
-   _say "running job: $sqlf";
-   psql -X -a -U $dbuser -d $dbname -h $dbhost -f $sqlf > logs/$base.log
-   _chkerr $? $sqlf
-}
-
-# ---------------------------------------------------------------------------
-_usage_example()
-{
-   cat <<EOF
-   Description: do something
-
-   Usage: `basename $0` [-h?] [-f filename] [-d YYYYMMDD]
-
-   Options:
-      Default is to fetch today's file and load it.  The following options
-      change this behavior.
-
-      -f filename    Skips the fetch and instead loads the local filename
-      -d YYYYMMDD    Fetches and loads file for YYYYMMDD
-      -h -?          Prints this usage message
-
-EOF
 }
 
