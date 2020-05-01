@@ -1,0 +1,178 @@
+
+Name:
+
+   dtof - convert files from Delimited To Fixed format
+
+Usage:
+
+   dtof [options] <file_name|->
+
+Options:
+
+   -d delimter    Character used to delimit fields in the input file, "\t" is
+                  Implemented for a tab character, a '|' is the default
+   -i             Include delimiter in the output.
+   -c ctl_card    Control card file name.  See Control Card Description below
+   -o layout_file Put generated layout for the output file in layout_file.
+   -n lrecl       Max length of input record in bytes.  Default is 2048.
+   -r N           Print the column ruler every N lines
+   -x             View output as hex print. (uses James Lemley's prhex -l -w)
+   -l             Layout record is first row, skip it.
+   -v             Print verbose warning messages
+   -h             Print this message
+   input_file|-   Input file name or "-" if reading from stdin.  Note that if
+                  reading from stdin, a control card is required, since dtof
+                  will not be able to make two passes on the input in order to
+                  calculate max widths.
+   -b bad_file    Write bad records to this file.  Normally bad records are
+                  just skipped, but with this option, they will also be
+                  written to this file.  Bad records are those that do not
+                  have a the requested output field (short records), and if
+                  the -I flag is used, will also be records with an
+                  inconsistent number of fields.
+   -S             Try to process records with inconsistent number of fields.
+                  The number of fields in the first non-blank record is used
+                  as a standard, against which all other records are compared.
+                  By default, if any record has a different number of fields,
+                  it will be skipped (if -b is used, written to the bad_file),
+                  and a warning issued at the end of the run.  However, if
+                  this flag is set, dtof will check to see if all requested
+                  output fields exist on this record and if so, it will
+                  process the record and not skip it.  A warning will still be
+                  issued at the end of the run.
+   -p             Do no phone home.  Several of the RISD tools send a message
+                  every time they are run, to risdtools.corp.acxiom.net which
+                  logs the tool name, version and server it's running on.  We
+                  added this "feature" after the RISD tools began to be widely
+                  used.  The theory, was that it would allow us to push bug
+                  fixes to users.  But in reality that would take organization
+                  and effort, so it's never really been used much...
+
+Description:
+
+   dtof is a tool that converts delimited files to a fixed width format.  It
+   reads from a file or stdin (but there are caveats, see below) and writes to
+   stdout.  You can supply a control card that defines the output layout you
+   want or (if no control card is supplied) dtof will figure out the max width
+   of each field, and optionally write the output layout to a file.   It does
+   this by making an an initial pass of the file.  Obviously, this adds to the
+   run time and can be noticable on very large files.  If dtof detects that
+   output is to a terminal, then the output is paged.  These abilities also
+   make dtof a convenient interactive tool for visually inspecting delimited
+   files on screen.
+
+   For example, to view a pipe delimited file on screen, simply type:
+
+      dtof -i file_name
+
+   The optional -i includes the delimiter in the output, which helps to
+   visually define columns.
+
+   When using dtof to convert files, simply redirect the output to a file.
+   For example, to convert a comma delimited file, and let dtof figure out the
+   layout, use this:
+
+      dtof -d , -o layout_file delimited_file > fixed_file
+
+   dtof can read from stdin if you specify - as the file name, however, you
+   must provide a control card when reading from stdin, since dtof will not be
+   able to make an initial pass of the data to calculate max widths.  For
+   example:
+
+      some_operation | dtof -c control_card - > fixed_file
+
+   Be sure to read the Warnings and Errors section below for additional
+   information on how dtof deals with problems in the input file.
+
+Control Card Description:
+
+   Comments are allowed and are anything following a pound ("#") sign.
+   Totally blank lines are allowed.  Each non-blank, non-comment line
+   represents a field in the output record.  Output fields can be a constant
+   value, a sequence number or a field from the input record.  Each line is
+   composed of two or three comma separated fields.  The first field contains
+   the input field position to be output or one of the special functions
+   CONSTANT or SEQUENCE described below.  The second field contains the length
+   of this field on the output record.  The optional third field contains one
+   of the formating flags LEFTJUSTIFY or RIGHTJUSTIFY, or the special
+   formating flag for sequences, ZEROPAD.  All fields default to LEFTJUSTIFY.
+   Case is unimportant in control cards except in the value of a CONSTANT.
+   Following is a description of each field type:
+
+   A Standard Input Field Definition:
+
+      input_field_position, length, justify_flag
+
+   Where input_field_possition is the field number on the input record.
+   justify_flag is optional.
+
+   A Constant Field Definition:
+
+      CONSTANT "value", length, justify_flag
+
+   Where value is the string to plug in the field.  Value must be enclosed in
+   quotes if the string contains spaces.  On constant fields, the length is
+   optional, if it is not supplied, then the length of the value string is
+   used.  justify_flag is optional.
+
+   A Sequence Field Definition:
+
+      SEQUENCE start increment, length, justify_flag ZEROPAD
+
+   Where start and increment are integers (negative values work as expected).
+   justify_flag and ZEROPAD are optional.
+
+Example Usage:
+
+   To convert the following file (named delim_file):
+
+      123|a|abc|defghi
+      456|a|aaa|bbb 
+      789|b|bbbbbbb|c 
+
+   Using the following control card (named ctl_card):
+
+      SEQUENCE 1 1, 5, zeropad     # generate a unique id
+      1, 5, righjustify
+      3, 10
+      2, 2    # 2nd field on input will be 4th on output, 2 bytes wide
+      4, 10
+
+   Use this command:
+
+      dtof -c ctl_card delim_file > fixed_file
+
+   The file fixed_file will then conain:
+
+     00001  123abc       a defghi    
+     00002  456aaa       a bbb       
+     00003  789bbbbbbb   b c         
+
+Warnings and Errors:
+
+   The following describes the way dtof handles certain input file problems
+   and which command line options affect this behavior.  For each record dtof
+   reads, it does the following before processing the record:
+
+      - Is the record a blank line? If so skip it (keep count) and issue a
+        warning at the end of the run.  A blank line is one where the newline
+        is the first character in the record.
+      - Is the -l (layout is first row) option set?  If so, skip the first
+        non-blank record.
+      - For the first non-blank (and non-layout) record, save a count of the
+        number of fields.  This will be used to compare against all subsequent
+        records.
+      - Does the max output field requested (in the control card) exist on
+        this record?  If false, and this is the first record, then die with an
+        error message.  If this is not the first record, skip it (keep count)
+        and issue a warning at the end of the run.  If the -b option is used,
+        also write this record to the bad_file.
+      - Is the count of fields in this record the same as the first record?
+        If false, skip it (and write to bad_file if -b is used), keep count
+        and issue a warning at the end of the run about inconsistent number of
+        fields.  However, if the -S option is set, dtof will check to see if
+        the max output field requested exists on this record, and if it does,
+        it will process the record rather than skipping it.  A warning will
+        stil be issued at the end of the run however.
+
+
