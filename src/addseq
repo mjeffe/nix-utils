@@ -1,0 +1,100 @@
+#!/usr/bin/perl
+#
+# Another bug-ugly utility from Matt's code archive.
+#
+
+use strict;
+use warnings;
+use Getopt::Std;
+use File::Basename;
+
+my $this = basename($0);
+
+sub usage () {
+   print STDERR <<EOF;
+Adds a sequence number to the end of a record.  $this writes to stdout.
+
+Usage: $this [-h] [-s N] [-f N] [-i N]  [-d delimiter] [-t] [-b] input_file > output_file
+Options:
+   -s N           use N as starting sequence number, defaults to 0
+   -i N           use N as increment, defaults to 1
+   -f N           make sequence field fixed-width, N bytes wide, right justified
+   -d delimiter   use delim as delimiter, defaults to ','.  NOTE:, this does not convert
+                  input file's delimiter, it only uses it as the delimiter which separates
+                  the sequence number from the other fields in the file.  It's up to you
+                  to use a delimiter that makes sense.
+   -b             add sequence to the beginning of the record, rather than the end
+   -t             include a trailing delimiter
+   -o str         include an arbitrary string as an additional second field.  The output
+                  order will be "sequence_number<delimiter>str".  This can be useful if
+                  you want to concatenate several files together and you need a "file_id"
+                  field.  Note, there is no support for wrapping in quotes. If you need
+                  that, just temporarily hack this script. Just try it to see the output.
+   -h             print this help message
+
+EOF
+exit(1);
+
+}
+
+our ($opt_h, $opt_s, $opt_f, $opt_i, $opt_d, $opt_t, $opt_b, $opt_o);
+getopts("htbs:i:d:l:r:f:o:");
+usage() if ( $opt_h );
+my $infile = shift;
+
+# since all switches are optional, set defaults
+my $seq = $opt_s || 0;
+my $incr = $opt_i || 1;
+my $delim = $opt_d || ",";
+my $trailing_delim = "";
+if ( $opt_t ) {
+   $trailing_delim = $delim;
+}
+my $fixed = $opt_f || 0; 
+my $seq_at_beginning = $opt_b || 0; 
+my $add_str = $opt_o || ""; 
+
+# die if conflicting options
+if ( $seq_at_beginning && $trailing_delim ) {
+   print STDERR "You want the sequence number at the beginning, but also a trailing delimiter?\n";
+   die("That's silly, I refuse...\n");
+}
+
+if ( ! $infile ) {
+   die("missing input file on command line.  Try $this -h\n");
+}
+
+open(IN, "<", $infile) or die("Can't open input file $infile\n");
+
+my $buf;
+my $s;
+while ( my $line = <IN> ) {
+   chomp($line);
+
+   # build sequence number
+   if ( $fixed ) {
+      $s = sprintf("%*d", $fixed, $seq);
+   }
+   else {
+      $s = $seq;
+   }
+
+   # add the optional string if present
+   $s .= $delim . $add_str;
+
+   # build output buffer
+   if ( $seq_at_beginning ) {
+      $buf = $s . $delim . $line . "\n"
+   }
+   else {
+      $buf = $line . $delim . $s . $trailing_delim . "\n";
+   }
+
+   # print, increment and move on...
+   print $buf;
+   $seq += $incr;
+}
+close(IN) or die("Can't close input file $infile\n");
+
+1;
+

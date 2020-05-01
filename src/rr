@@ -1,6 +1,8 @@
 #! /bin/ksh
 # $Id: rr.sh 18 2011-03-09 21:47:56Z mjeffe $
 # Another bug-ugly utility from Matt's code archive.
+#
+# Randome Range
 
 if [ $# -lt 1 ]; then
    echo "Usage: `basename $0` NUMBER"

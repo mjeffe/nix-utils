@@ -6,29 +6,25 @@
  * DESCRITION
  *   Scans a file (binary or text) and breaks it into records using the
  *   specified character as the record terminator.
+ *
+ * ! ! ! NOTE ! ! !
+ *
+ *   This is a one-off! Well, I've used it a bunch, for a certain client's
+ *   crappy data files... You need to adjust the #defines before you use it.
+ *
  ****************************************************************************/
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 
-
-/*
- * globals
- */
 char *me;
-#define RT 0x80       /* Record Terminator - hex 80, decimal 128 */
-#define LRECL 400
+#define RT 0x80         /* Record Terminator */
+#define LRECL 400       /* pad record to this length */
+#define PAD_CHAR 0x40   /* pad character */
 
-
-
-
-/*
- * function prototypes
- */
 int process_file(char *file_name);
-
-
 
 /*************************************************************************
  * MAIN
@@ -37,7 +33,7 @@ int main(int argc, char *argv[]) {
    int i;
    char *filename;
 
-   me = argv[0];  /* set the global variable with this programs name */
+   me = argv[0];
 
    /* get input file name (can't use stdin very easily since we */
    /* have to make two passes on the file                       */
@@ -65,8 +61,6 @@ int process_file(char *file_name) {
    int maxlen = 0;
    int recs = 0;
    
-
-   /* open intput file */
    if (strcmp(file_name, "-") == 0) {
       infile = stdin;
    }
@@ -78,7 +72,6 @@ int process_file(char *file_name) {
       }
    }
 
-   
    /* read a byte at a time, and write a byte at a time, you can't get any simpler!! */
    /* create fixed length records:           */
    /*   - search for the record terminator   */
@@ -95,7 +88,7 @@ int process_file(char *file_name) {
 
          /* pad the record out to LRECL bytes */
          for ( j = i; j < LRECL; j++ ) {
-            putc(0x40, stdout);
+            putc(PAD_CHAR, stdout);
          }
          i=0;
       } else {
@@ -106,14 +99,12 @@ int process_file(char *file_name) {
 
    /* pad the last record */
    for ( j = i; j < LRECL; j++ ) {
-      putc(0x40, stdout);
+      putc(PAD_CHAR, stdout);
    }
    recs++;
 
-   /* close the input file */
    fclose(infile);
 
-   /* print the report */
    fprintf(stderr, "Max reclen: %d,  Recs counted: %d\n", maxlen, recs); 
    if ( maxlen > LRECL ) {
       fprintf(stderr, "!!! ERROR - a record was encountered that is longer than the \n");

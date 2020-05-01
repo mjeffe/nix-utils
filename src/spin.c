@@ -8,11 +8,12 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
 
 
-#define UDELAY 500000
-#define DELAY 2
-#define VERSION "$Id: spin.c 18 2011-03-09 21:47:56Z mjeffe $"
+#define UDELAY 200000
+#define DELAY 1
 
 char *this;
 char spin[4] = { '|', '/', '-', '\\' };
@@ -22,11 +23,7 @@ int main(int argc, char *argv[]) {
    this = argv[0];
    if ( argc > 1 ) {
       if ( strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0 ) {
-         printf("usage: %s [-h|--help] [-v|--version] [-u|--udelay [usleep_delay]] [sleep_delay]\n", this);
-         exit(0);
-      }
-      else if ( strcmp(argv[1], "-v") == 0 || strcmp(argv[1], "--version") == 0 ) {
-         printf("%s: version %s\n", this, VERSION);
+         printf("usage: %s [-h|--help] [-u|--udelay [usleep_delay]] [sleep_delay]\n", this);
          exit(0);
       }
       else if ( strcmp(argv[1], "-u") == 0 || strcmp(argv[1], "--udelay") == 0 ) {
