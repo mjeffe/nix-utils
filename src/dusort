@@ -1,2 +1,1 @@
-#du -k "$@" | sort -n | awk '{printf "%10sK in directory %s\n", $1, $2}'
-du -k -x "$@" | sort -n | awk '{printf "%10sK in directory %s\n", $1, $2}'
+du -k -x "$@" | sort -n | tail -40 | awk '{printf "%10sK in directory %s\n", $1, $2}'
