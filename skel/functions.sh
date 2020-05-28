@@ -29,8 +29,8 @@ trap _sigint_handler SIGINT
 
 # ---------------------------------------------------------------------------
 _die() {
-    msg="$1"   # optional error message you want printed
-    rc=${2:-1} # optional return code to die with
+    local msg="$1"   # optional error message you want printed
+    local rc=${2:-1} # optional return code to die with
 
     if [ -n "$msg" ]; then
         _say "$msg"
@@ -40,7 +40,7 @@ _die() {
 
 # ---------------------------------------------------------------------------
 _say() {
-   dt=`date | perl -ne 'chomp; print'`
+   local dt=`date | perl -ne 'chomp; print'`
    echo "$dt: $1"
 }
 
@@ -71,9 +71,9 @@ _chkerr_simple() {
 # ---------------------------------------------------------------------------
 #typeset -xf chkerr
 _chkerr() {
-    rc_list="$1"      # return codes
-    msg="$2"          # error message you want displayed if rc > 0
-    script="$3"       # OPTIONAL name of the script or command who's return code we are checking
+    local rc_list="$1"      # return codes
+    local msg="$2"          # error message you want displayed if rc > 0
+    local script="$3"       # OPTIONAL name of the script or command who's return code we are checking
 
     # Process $rc in a loop, to support receiving an array of exit codes, for
     # pipelines (obtained from $PIPESTATUS in bash).  Note that they must be
@@ -107,7 +107,7 @@ _read_dot_env_var() {
     exit 1
   fi
 
-  ENV_VAL=$(egrep "^${1}=" .env | cut -d '=' -f 2)
+  local ENV_VAL=$(egrep "^${1}=" .env | cut -d '=' -f 2)
 
   echo ${ENV_VAL}
 }

@@ -235,5 +235,26 @@ else
 fi
 
 
+# ------------------------------------------------------------------------
+# some helpful debugging ideas
+# ------------------------------------------------------------------------
 
+# turn on bash debugging output
+set -x
+
+# turn off debugging output
+set +x
+
+# PS4 is the prompt for bash debug trace. Setting as follows can help track things down
+export PS4='+$BASH_SOURCE:$LINENO:$FUNCNAME: '
+
+# from: https://mywiki.wooledge.org/BashGuide/Practice
+# Apparently bash can step through your code. Quote:
+"
+The following code uses the DEBUG trap to inform the user about what command
+is about to be executed and wait for his confirmation do to so. Put this code
+in your script, at the location you wish to begin stepping:
+
+trap '(read -p "[$BASH_SOURCE:$LINENO] $BASH_COMMAND?")' DEBUG
+"
 
