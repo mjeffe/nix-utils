@@ -4,9 +4,10 @@
 # Compile and install utilities
 # ---------------------------------------------------------------------
 
+BASEDIR=$HOME/src
 TARGETS = install_all
 #SUPPORT = ../contrib/support
-SUPPORT = /home/mjeffe/src/acx/sawmill/jamestools/support
+SUPPORT = $BASEDIRD/acx/sawmill/jamestools/support
 
 # utilities that are executable scripts (don't need to be compiled)
 UTILS = \
