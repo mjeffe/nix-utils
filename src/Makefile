@@ -203,12 +203,14 @@ install: $(UTILS)
 	   mkdir $(HOME)/bin; \
 	fi
 	cp $(UTILS) $(HOME)/bin/
+	chmod u+x $(HOME)/bin/*
 
 install_all: $(UTILS) $(C_UTILS) $(SUBDIR_UTILS)
 	if test ! -d $(HOME)/bin; then \
 	   mkdir $(HOME)/bin; \
 	fi
 	cp $(UTILS) $(C_UTILS) $(HOME)/bin/
+	chmod u+x $(HOME)/bin/*
 
 clean:
 	rm -f *.o $(C_UTILS) *.tar.gz
