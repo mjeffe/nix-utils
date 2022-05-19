@@ -1,114 +1,288 @@
 # ---------------------------------------------------------------------------
-# Shell script helper functions I commonly use. Source this near the top
-# of your script.
+# Common functions used in my shell scripts.
 #
-# There are also functions that I commonly use, but need to be customized for
-# each application. These live in nix-utils/skel/snippets.sh
+# This is a collection of useful functionality that I have built up over many
+# years. These have been developed and used in bash, I cannot vouch for other
+# shells.  This file should only contain truly generic functions. I have other
+# collections that are useful in certain project environments (Laravel, Vue,
+# etc). Please feel free to use and or modify to suit your needs. If you make
+# changes or have suggestions for additions, I would love to year from you.
+#
+#   Matt Jeffery - matt@mattjeffery.dev
+#
+# NOTES:
+#
+#   * To use these functions, simply source this file into your parent script:
+#
+#       . utils/functions.sh
+#       # or
+#       source utils/functions.sh
+#
+#   * Some of these functions depend on global environment variables. For a
+#     given project, you can copy this script into your project and define
+#     them in here for everyone.  Or you can re-define them in the parent
+#     script after sourcing this file.
+#
+#   * Many functions "return" data. However, returning data from shell
+#     functions is a little wonky. Essentially, you can't.  But what we can do
+#     is echo it, which means you have to *execute* the function and capture
+#     it's output. For example, with the user prompting funcion _ask:
+#
+#    answer=$(_ask 'What is your favorite color?')
+#    echo "Are you sure $answer is your final answer?"
+#
 # ---------------------------------------------------------------------------
 
+# run from project root (adjust for your project)
+#cd "${0%/*}/.."
+
+# should (may?) be overridden in your script
+# These are used by functions in the Laravel/Vue section of this file
+BASEDIR='.'
+
 # ---------------------------------------------------------------------------
-# you should override this AFTER you source this file
-# ---------------------------------------------------------------------------
-_cleanup() {
-    _say "cleaning up..."
-    _say "This is a generic cleanup script and it doesn't do anything!"
-
-    # do your cleanup
-    #cd $BASEDIR
-    #rm -fr $tmpdir
-}
-
-
+# Catch the linux keyboard interrupt signal, usually Ctrl-C and invoke cleanup
 # ---------------------------------------------------------------------------
 _sigint_handler() {
-   echo "Ctrl-C pressed, aborting..."
-   _cleanup   # try to run your cleanup handler if you have one
-   exit 1
+    echo "Ctrl-C pressed, aborting..."
+    _cleanup
+    exit 1
 }
 trap _sigint_handler SIGINT
 
 # ---------------------------------------------------------------------------
-_die() {
-    local msg="$1"   # optional error message you want printed
-    local rc=${2:-1} # optional return code to die with
-
-    if [ -n "$msg" ]; then
-        _say "$msg"
-    fi
-    exit $rc
+# You should redefine this in your script if you need it to actually do
+# something.  It is inteneded to clean up anything temporary your script
+# created. We define it here to prevent errors because some of our other
+# functions call it (see _sigint_handler)
+# ---------------------------------------------------------------------------
+_cleanup() {
+    _say "stub _cleanup called (doesn't actually do anything)"
+    #rm -fr $tmpdir
 }
 
+# ---------------------------------------------------------------------------
+# print log message preceeded by a datetime stamp
+#
+#   _say [-n] message
+#
+# The optional '-n' (must be the FIRST parameter) will simply print the message
+# without the datetime stamp.
+#
+# BUG: printf exibits very strange behavior when using $2 as the message
+# paramter (i.e. when called with -n).
 # ---------------------------------------------------------------------------
 _say() {
-   local dt=`date | perl -ne 'chomp; print'`
-   echo "$dt: $1"
+    if [ "$1" = '-n' ]; then
+        # this uglyness is to handle the bug described above
+        msg="$2"
+        if [ "${msg:0:1}" = '-' ]; then
+            printf '%s\n' $msg
+        else
+            printf "$msg\n"
+        fi
+        return
+    fi
+
+    local dt=`date | perl -ne 'chomp; print'`
+    printf "### $dt: $1\n"
 }
 
 # ---------------------------------------------------------------------------
-# simple version, just accepts $?
-# see below for more complex version
-# ---------------------------------------------------------------------------
-_chkerr_simple() {
-   if [ $1 -ne 0 ]; then
-      _say "$2 exited with error (rc=$1)"
-      #_email "ERROR: $2"
-      exit $1
-   fi
-}
-
-# ---------------------------------------------------------------------------
-# check the return code for non zero status
+# print message wrapped in ansi terminal escape codes for a given color
 #
-# Call like this after running a command:
+# _say_color [-n] message color
+#
+# See _say usage for -n
+# ---------------------------------------------------------------------------
+_say_color() {
+    local cmd='_say'
+    if [ "$1" = '-n' ]; then
+        cmd='_say -n'
+        shift
+    fi
+
+    local msg="$1"
+    local color="$2"   # ansi escape code for the color you want
+    if [ -z "$color" ]; then
+        $cmd "$msg"
+        return
+    fi
+
+    $cmd "\033[${color}${msg}\033[0m"
+}
+
+# ---------------------------------------------------------------------------
+# pre-defined colored message functions
+# For example, to print a standard log message in red:
+#
+#   _say_danger [-n] message
+#
+# See _say usage for -n
+# ---------------------------------------------------------------------------
+_say_danger() {
+    _say_color "$@" '0;31m'  # red
+}
+_say_warning() {
+    _say_color "$@" '1;33m'  # yellow
+}
+_say_comment() {
+    _say_color "$@" '0;33m'  # brown
+}
+_say_success() {
+    _say_color "$@" '0;32m'  # green
+}
+_say_info() {
+    _say_color "$@" '0;36m'  # cyan
+}
+
+# ---------------------------------------------------------------------------
+# Prompt the user for confirmation
+#
+# _confirm prompt_message
+#
+# If user responds in the afirmative (default) simply return
+# If user responds in the negative exit the script (with success)
+# ---------------------------------------------------------------------------
+_confirm() {
+    local prompt="$1"
+    read -p "$prompt [Yn]: " ans
+    if [ -z "$ans" -o "$ans" = "Y" -o "$ans" = "y" -o "$ans" = "yes" ]; then
+        return
+    else
+       echo "aborting..."
+       exit 0
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Prompt the user for input
+#
+# _ask prompt_message [default_value]
+#
+# To use, capture the output of a call to this function
+#
+#    answer=$(_ask 'What is the password?')
+#    # provide a default
+#    color=$(_ask 'What color?' 'blue')
+#
+# ---------------------------------------------------------------------------
+_ask() {
+    local no_echo=''
+    if [ "$1" = '-s' ]; then
+        no_echo='-s '
+        shift
+    fi
+
+    local prompt="$1"
+    local default="$2"
+    local msg="$prompt"
+    if [ -n "$default" ]; then
+        msg="$msg [$default]:"
+    fi
+
+    read $no_echo -p "$msg " reply
+
+    echo "${reply:-${default}}$nl"
+}
+
+# ---------------------------------------------------------------------------
+# Print message and exit with error
+# See _say usage for -n
+# ---------------------------------------------------------------------------
+_die() {
+    _say_danger "$@"
+    exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Extract the value of a .env file variable
+#
+# To use, capture the output of a call to this function
+#
+#   local app_env=$(_env_val APP_ENV /path/to/.env)
+# ---------------------------------------------------------------------------
+_env_val() {
+    local var="$1"
+    local file="$2"
+
+    echo $(egrep "^${var}=" "${file}" | cut -d '=' -f 2)
+}
+
+# ---------------------------------------------------------------------------
+# Get the given variable from the system's /etc/os-release file. This works for
+# many modern distribtutions that support the /etc/os-release file
+#
+# To use, capture the output of a call to this function
+#
+#   echo Running on $(_os_release PRETTY_NAME)
+#   local os_version=$(_os_release VERSION_ID)
+# ---------------------------------------------------------------------------
+_os_release() {
+    local var="$1"
+
+    # note use of bash specific indirect variable reference ${!var}
+    (. /etc/os-release && echo ${!var})
+}
+
+# ---------------------------------------------------------------------------
+# Get the string name of os distribution. This works for many modern
+# distribtutions that support the /etc/os-release file
+#
+# To use, capture the output of a call to this function
+#
+#   local os_distribution=$(_get_os_distro)
+# ---------------------------------------------------------------------------
+_get_os_distro() {
+    _os_release ID
+}
+
+# ---------------------------------------------------------------------------
+# Checks the value passed as $1 and exits with that value if it is non-zero.
+# Intended to simplify error checking and exit with a useful message on error.
+#
+#   _chkerr <code|array_of_codes> <description_of_what_was_called>
+#
+# This supports receiving an array of exit codes, for pipelines (obtained from
+# $PIPESTATUS in bash).  Note that they must be passed as a single argument,
+# typically by quoting.  In such a case, make sure you're using bash and
+# passing all elements of the array, using the syntax: "${PIPESTATUS[*]}". The
+# quotes, braces, and * are all required for it to work properly. See example
+# below.
+#
+# Note, older versions of bash only set $PIPESTATUS for pipelines, however
+# current versions seem to set it for every command executed.
+#
+# For example:
 #
 #   my_script.sh
-#   chkerr $? "something went wrong" my_script.sh
+#   _chkerr $? "my_script.sh"
+#
+#   scripts/abupgrade.sh 1.2.3
+#   _chkerr $? 'abupgrade for version 1.2.3'
 #
 # Or like this after running a pipeline:
 #
-#   `foo | bar | baz`
-#   chkerr "${PIPESTATUS[*]} $?"
+#   warnings=`cat foo.log | grep -i "warning:" | awk '{print $2}'`
+#   _chkerr "${PIPESTATUS[*]}" "extract foo warnings"
 # ---------------------------------------------------------------------------
 #typeset -xf chkerr
 _chkerr() {
     local rc_list="$1"      # return codes
-    local msg="$2"          # error message you want displayed if rc > 0
-    local script="$3"       # OPTIONAL name of the script or command who's return code we are checking
+    local msg="$2"          # description of what was called
 
-    # Process $rc in a loop, to support receiving an array of exit codes, for
-    # pipelines (obtained from $PIPESTATUS in bash).  Note that they must be
-    # passed as a single argument, typically by quoting.  In such a case, make
-    # sure you're using bash, and use this syntax: chkerr "${PIPESTATUS[*]} $?"
-    # The quotes, braces, and * are all required for it to work properly.
-    # $PIPESTATUS is only set for pipelines, so the $? at the end there ensures
-    # that if you convert a pipeline to a single command and don't convert the
-    # chkerr line, the error will still be caught properly
-
+    idx=1
     for rc in $rc_list; do
         if [ "$rc" -ne 0 ]; then
-            _say "ERROR: $msg"
-            echo -n "ERROR during $this: return code $rc"
-            if [ -n "$script" ]; then echo -n " returned by $script"; fi
-            #_email "ERROR: $2"
-            _die
+            if [ "${#rc_list}" -gt 1 ]; then
+                msg="$msg pipeline element $idx"
+            fi
+
+            _say_danger "$msg exited with error (rc=$rc)"
+            exit $rc
         fi
+        idx=$((idx + 1))
     done
 }
 #export chkerr
-
-# ---------------------------------------------------------------------------
-# fetch variables's value from .env key=value type file
-#
-# my_var=`_read_dot_env_var DBNAME`
-# ---------------------------------------------------------------------------
-_read_dot_env_var() {
-  if [ -z "$1" ]; then
-    _say "missing required variable argumentr"
-    exit 1
-  fi
-
-  local ENV_VAL=$(egrep "^${1}=" .env | cut -d '=' -f 2)
-
-  echo ${ENV_VAL}
-}
 
