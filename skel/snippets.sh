@@ -258,3 +258,19 @@ in your script, at the location you wish to begin stepping:
 trap '(read -p "[$BASH_SOURCE:$LINENO] $BASH_COMMAND?")' DEBUG
 "
 
+# -----------------------------------------------------------------------------
+# useful to quote all non alphanumeric characters in a string
+# from a shell script where something like sed or grep would complain.
+# -----------------------------------------------------------------------------
+myval=`echo $1 | perl -ne 'print(quotemeta($_));'`
+sed "s/$val/$myval/" thefile
+
+
+# -----------------------------------------------------------------------------
+# add CR LF to the end of a file
+#
+# of course, installing the dos2unix package is better
+# -----------------------------------------------------------------------------
+someproces | perl -lne 'print $_ . "\r";' > MSDOS_outfile.txt
+
+

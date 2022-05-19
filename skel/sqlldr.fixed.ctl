@@ -1,3 +1,6 @@
+--
+-- Oracle sqlldr control file for fixed width files
+--
 OPTIONS (ERRORS=1000, silent=feedback)
 --OPTIONS (BINDSIZE=900000, SILENT=(FEEDBACK, DISCARDS), DIRECT=TRUE, ERRORS=9999, PARALLEL=TRUE)
 -- UNRECOVERABLE
