@@ -23,7 +23,7 @@
 #   * Many functions "return" data. However, returning data from shell
 #     functions is a little wonky. Essentially, you can't.  But what we can do
 #     is echo it, which means you have to *execute* the function and capture
-#     it's output. For example, with the user prompting funcion _ask:
+#     it's output. For example, with the user prompting function _ask:
 #
 #    answer=$(_ask 'What is your favorite color?')
 #    echo "$answer is your final answer"
@@ -82,7 +82,9 @@ _say() {
 }
 
 # ---------------------------------------------------------------------------
-# print message wrapped in ansi terminal escape codes for a given color
+# print message wrapped in ANSI terminal escape codes for a given color
+#
+# For ANSI codes see: https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
 #
 # _say_color [-n] message color
 #
@@ -96,7 +98,7 @@ _say_color() {
     fi
 
     local msg="$1"
-    local color="$2"   # ansi escape code for the color you want
+    local color="$2"   # ANSI escape code for the color you want
     if [ -z "$color" ]; then
         $cmd "$msg"
         return
@@ -108,6 +110,8 @@ _say_color() {
 # ---------------------------------------------------------------------------
 # pre-defined colored message functions
 # For example, to print a standard log message in red:
+#
+# For ANSI codes see: https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
 #
 #   _say_danger [-n] message
 #
