@@ -23,9 +23,7 @@ UTILS = \
 	iota \
 	lastlog.pl \
 	layout_to_ora.sh \
-	ll \
 	lsdate \
-	lt \
 	memu \
 	mk_flux_menu.sh \
 	mkload.pl \
