@@ -209,6 +209,31 @@ _env_val() {
     echo $(egrep "^${var}=" "${file}" | cut -d '=' -f 2)
 }
 
+
+# ---------------------------------------------------------------------------
+# Since being forced to work on a Mac recently, I have had to implement a
+# generic check. This will die if not running on the given OS. There may be
+# a better way to do this...
+# Parameters are one of 'mac' or 'linux'
+#
+#   # die if not running on a Mac
+#   _os_check mac
+#   # die if not running on linux
+#   _os_check linux
+# ---------------------------------------------------------------------------
+_os_check() {
+    local os="$1"
+
+    if [[ $os = 'mac' && ! "$OSTYPE" =~ darwin* ]]; then
+        echo Should only be run on a Mac
+        exit 1
+    fi
+    if [[ $os = 'linux' && ! "$OSTYPE" =~ linux* ]]; then
+        echo Should only be run on Linux
+        exit 1
+    fi
+}
+
 # ---------------------------------------------------------------------------
 # Get the given variable from the system's /etc/os-release file. This works for
 # many modern distribtutions that support the /etc/os-release file
