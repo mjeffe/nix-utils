@@ -18,11 +18,6 @@
 #       # or
 #       source utils/functions.sh
 #
-#   * Some of these functions depend on global environment variables. For a
-#     given project, you can copy this script into your project and define
-#     them in here for everyone.  Or you can re-define them in the parent
-#     script after sourcing this file.
-#
 #   * Many functions "return" data. However, returning data from shell
 #     functions is a little wonky. Essentially, you can't.  But what we can do
 #     is echo it, which means you have to *execute* the function and capture
@@ -35,10 +30,6 @@
 
 # run from project root (adjust for your project)
 #cd "${0%/*}/.."
-
-# should (may?) be overridden in your script
-# These are used by functions in the Laravel/Vue section of this file
-BASEDIR='.'
 
 # ---------------------------------------------------------------------------
 # Catch the linux keyboard interrupt signal, usually Ctrl-C and invoke cleanup
