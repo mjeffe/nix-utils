@@ -295,9 +295,8 @@ _chkerr() {
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
-# Parameters are one of 'mac' or 'linux'
-#
-# This will die if not running on the given OS. There may be a better way to do this...
+# Die if not running on the given OS. There may be a better way to do this...
+# Parameters are one of 'mac' or 'linux'.
 #
 # For example:
 #
