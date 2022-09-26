@@ -45,7 +45,7 @@ trap _sigint_handler SIGINT
 
 # ---------------------------------------------------------------------------
 # You should redefine this in your script if you need it to actually do
-# something.  It is inteneded to clean up anything temporary your script
+# something.  It is intended to clean up anything temporary your script
 # created. We define it here to prevent errors because some of our other
 # functions call it (see _sigint_handler)
 # ---------------------------------------------------------------------------
@@ -55,19 +55,19 @@ _cleanup() {
 }
 
 # ---------------------------------------------------------------------------
-# print log message preceeded by a datetime stamp
+# print log message preceded by a datetime stamp
 #
 #   _say [-n] message
 #
 # The optional '-n' (must be the FIRST parameter) will simply print the message
 # without the datetime stamp.
 #
-# BUG: printf exibits very strange behavior when using $2 as the message
-# paramter (i.e. when called with -n).
+# BUG: printf exhibits very strange behavior when using $2 as the message
+# parameter (i.e. when called with -n).
 # ---------------------------------------------------------------------------
 _say() {
     if [ "$1" = '-n' ]; then
-        # this uglyness is to handle the bug described above
+        # this ugliness is to handle the bug described above
         msg="$2"
         if [ "${msg:0:1}" = '-' ]; then
             printf '%s\n' $msg
@@ -134,7 +134,7 @@ _say_info() {
 #
 # _confirm prompt_message
 #
-# If user responds in the afirmative (default) simply return
+# If user responds in the affirmative (default) simply return
 # If user responds in the negative exit the script (with success)
 # ---------------------------------------------------------------------------
 _confirm() {
@@ -205,34 +205,9 @@ _env_val() {
     echo $(egrep "^${var}\s*=" "${file}" | cut -d '=' -f 2)
 }
 
-
-# ---------------------------------------------------------------------------
-# Since being forced to work on a Mac recently, I have had to implement a
-# generic check. This will die if not running on the given OS. There may be
-# a better way to do this...
-# Parameters are one of 'mac' or 'linux'
-#
-#   # die if not running on a Mac
-#   _os_check mac
-#   # die if not running on linux
-#   _os_check linux
-# ---------------------------------------------------------------------------
-_os_check() {
-    local os="$1"
-
-    if [[ $os = 'mac' && ! "$OSTYPE" =~ darwin* ]]; then
-        echo Should only be run on a Mac
-        exit 1
-    fi
-    if [[ $os = 'linux' && ! "$OSTYPE" =~ linux* ]]; then
-        echo Should only be run on Linux
-        exit 1
-    fi
-}
-
 # ---------------------------------------------------------------------------
 # Get the given variable from the system's /etc/os-release file. This works for
-# many modern distribtutions that support the /etc/os-release file
+# many modern distributions that support the /etc/os-release file
 #
 # To use, capture the output of a call to this function
 #
@@ -248,7 +223,7 @@ _os_release() {
 
 # ---------------------------------------------------------------------------
 # Get the string name of os distribution. This works for many modern
-# distribtutions that support the /etc/os-release file
+# distributions that support the /etc/os-release file
 #
 # To use, capture the output of a call to this function
 #
@@ -306,4 +281,52 @@ _chkerr() {
     done
 }
 #export chkerr
+
+# ===========================================================================
+# The remaining functions are recent additions with limited testing...
+#
+# Since being forced to work on a bletcherous (new to me) platform recently, I
+# have had to implement a few new os checking functions. Eventually one will
+# win out...
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Parameters are one of 'mac' or 'linux'
+#
+# This will die if not running on the given OS. There may be a better way to do this...
+#
+# For example:
+#
+#   # die if not running on a Mac
+#   _os_check mac
+# ---------------------------------------------------------------------------
+_os_check() {
+    local os="$1"
+
+    if [[ $os = 'linux' && ! "$OSTYPE" =~ linux* ]]; then
+        echo Should only be run on Linux
+        exit 1
+    fi
+    if [[ $os = 'mac' && ! "$OSTYPE" =~ darwin* ]]; then
+        echo Should only be run on a Mac
+        exit 1
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Simply returns one of 'mac', 'linux', or 'other'
+#
+# I could have added this to one of my older get_os() functions, but so many of
+# the checks are obsolete (True64, DEC, etc), or I just don't use anymore
+# (AIX, HP-UX, etc) so I have no way to test.  Let's just keep it simple.
+# ---------------------------------------------------------------------------
+_get_os() {
+    if [[ "$OSTYPE" =~ linux* ]]; then
+        echo 'linux'
+    elif [[ "$OSTYPE" =~ darwin* ]]; then
+        echo 'mac'
+    else
+        echo 'other'
+    fi
+}
 
