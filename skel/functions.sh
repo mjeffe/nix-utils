@@ -189,7 +189,10 @@ _die() {
 }
 
 # ---------------------------------------------------------------------------
-# Extract the value of a .env file variable
+# Extract the value of a .env file variable.  Note, it simply returns
+# everything after the '=' sign. Specifically, it doesn't do any work to trim
+# spaces. While *most* .env files don't allow spaces surrounding the '=', some
+# do, so you may have to deal with that.
 #
 # To use, capture the output of a call to this function
 #
@@ -199,7 +202,7 @@ _env_val() {
     local var="$1"
     local file="$2"
 
-    echo $(egrep "^${var}=" "${file}" | cut -d '=' -f 2)
+    echo $(egrep "^${var}\s*=" "${file}" | cut -d '=' -f 2)
 }
 
 
