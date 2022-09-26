@@ -11,12 +11,14 @@
 #   Matt Jeffery - matt@mattjeffery.dev
 #
 # NOTES:
+#   * I often copy this into a project directory, so it may be modified. My
+#      maintained version should be found at:
+#
+#       https://github.com/mjeffe/nix-utils/blob/master/skel/functions.sh
 #
 #   * To use these functions, simply source this file into your parent script:
 #
-#       . utils/functions.sh
-#       # or
-#       source utils/functions.sh
+#       . utils/functions.sh    # source utils/functions.sh
 #
 #   * Many functions "return" data. However, returning data from shell
 #     functions is a little wonky. Essentially, you can't.  But what we can do
@@ -24,7 +26,7 @@
 #     it's output. For example, with the user prompting funcion _ask:
 #
 #    answer=$(_ask 'What is your favorite color?')
-#    echo "Are you sure $answer is your final answer?"
+#    echo "$answer is your final answer"
 #
 # ---------------------------------------------------------------------------
 
