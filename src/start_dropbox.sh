@@ -15,6 +15,7 @@
 #
 
 killall dropbox
+sleep 1
 
 base=$HOME
 
