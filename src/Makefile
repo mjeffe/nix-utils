@@ -4,10 +4,10 @@
 # Compile and install utilities
 # ---------------------------------------------------------------------
 
-BASEDIR=$HOME/src
+BASEDIR=$(HOME)/src
 TARGETS = install_all
 #SUPPORT = ../contrib/support
-SUPPORT = $BASEDIRD/acx/sawmill/jamestools/support
+SUPPORT = $(BASEDIR)/acx/sawmill/jamestools/support
 
 # utilities that are executable scripts (don't need to be compiled)
 UTILS = \
@@ -18,7 +18,7 @@ UTILS = \
 	dmcrypt_setup.sh \
 	ematt \
 	findmod.pl \
-       	ftpit \
+	ftpit \
 	iolog \
 	iota \
 	lastlog.pl \
@@ -208,6 +208,17 @@ install_all: $(UTILS) $(C_UTILS) $(SUBDIR_UTILS)
 	   mkdir $(HOME)/bin; \
 	fi
 	cp $(UTILS) $(C_UTILS) $(HOME)/bin/
+	chmod u+x $(HOME)/bin/*
+
+install_linked: $(UTILS)
+	if test ! -d $(HOME)/bin; then \
+	   mkdir $(HOME)/bin; \
+	fi
+	SRCDIR=$(shell pwd); \
+	for u in $(UTILS); do \
+		rm $(HOME)/bin/$$u; \
+		ln -s $$SRCDIR/$$u $(HOME)/bin/; \
+	done
 	chmod u+x $(HOME)/bin/*
 
 clean:
