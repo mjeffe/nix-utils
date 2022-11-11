@@ -210,6 +210,13 @@ install_all: $(UTILS) $(C_UTILS) $(SUBDIR_UTILS)
 	cp $(UTILS) $(C_UTILS) $(HOME)/bin/
 	chmod u+x $(HOME)/bin/*
 
+install_binaries: $(C_UTILS) $(SUBDIR_UTILS)
+	if test ! -d $(HOME)/bin; then \
+	   mkdir $(HOME)/bin; \
+	fi
+	cp $(C_UTILS) $(HOME)/bin/
+	chmod u+x $(HOME)/bin/*
+
 install_linked: $(UTILS)
 	if test ! -d $(HOME)/bin; then \
 	   mkdir $(HOME)/bin; \
