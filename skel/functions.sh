@@ -268,13 +268,13 @@ _get_os_distro() {
 # ---------------------------------------------------------------------------
 #typeset -xf chkerr
 _chkerr() {
-    local rc_list="$1"      # return codes
+    local rc_list=($1)      # return codes, convert to array
     local msg="$2"          # description of what was called
 
     idx=1
-    for rc in $rc_list; do
+    for rc in "${rc_list[@]}"; do
         if [ "$rc" -ne 0 ]; then
-            if [ "${#rc_list}" -gt 1 ]; then
+            if [ "${#rc_list[@]}" -gt 1 ]; then
                 msg="$msg pipeline element $idx"
             fi
 
