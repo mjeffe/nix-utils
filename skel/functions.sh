@@ -345,3 +345,29 @@ _get_os() {
     fi
 }
 
+# ---------------------------------------------------------------------------
+_spawn_linux_terminal() {
+    gnome-terminal --tab -- $@
+}
+
+# ---------------------------------------------------------------------------
+_spawn_mac_terminal() {
+    local cmd="$@"
+    osascript -e "tell app \"Terminal\"
+        do script \"$cmd\"
+    end tell"
+}
+
+# ---------------------------------------------------------------------------
+_spawn_terminal() {
+    local cmd="$@"
+
+    if [ $(_get_os) = 'linux' ]; then
+        _spawn_linux_terminal "$cmd"
+    elif [ $(_get_os) = 'mac' ]; then
+        _spawn_mac_terminal "$cmd"
+    else
+        _die "Unsupported os"
+    fi
+}
+
