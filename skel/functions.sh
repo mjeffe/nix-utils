@@ -329,6 +329,18 @@ _os_check() {
 }
 
 # ---------------------------------------------------------------------------
+# Die if docker desktop is not running
+# ---------------------------------------------------------------------------
+_docker_is_running_check() {
+    docker ps > /dev/null 2>&1
+    local rc=$?
+
+    if [ "$rc" -ne 0 ]; then
+        _die -n "Docker Desktop does not appear to be running. Please start it then try again"
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Simply returns one of 'mac', 'linux', or 'other'
 #
 # I could have added this to one of my older get_os() functions, but so many of
