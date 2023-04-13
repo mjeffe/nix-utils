@@ -33,6 +33,22 @@
 # run from project root (adjust for your project)
 #cd "${0%/*}/.."
 
+#
+# Define ANSI escape characters for a few common colors. These are used
+# by the _say_color family of functions, but can also be used directly
+# to output multiple colors on one line using `echo -e`:
+#
+#   echo -e "${CRED}Red Warning${CCLEAR}: some plain old text"
+#
+# For ANSI codes see: https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
+#
+CCLEAR='\033[0m'  # clear all color
+CRED='\033[0;31m'  # red
+CYELLOW='\033[1;33m'  # yellow
+CBROWN='\033[0;33m'  # brown
+CGREEN='\033[0;32m'  # green
+CCYAN='\033[0;36m'  # cyan
+
 # ---------------------------------------------------------------------------
 # Catch the linux keyboard interrupt signal, usually Ctrl-C and invoke cleanup
 # ---------------------------------------------------------------------------
@@ -84,8 +100,6 @@ _say() {
 # ---------------------------------------------------------------------------
 # print message wrapped in ANSI terminal escape codes for a given color
 #
-# For ANSI codes see: https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
-#
 # _say_color [-n] message color
 #
 # See _say usage for -n
@@ -104,33 +118,31 @@ _say_color() {
         return
     fi
 
-    $cmd "\033[${color}${msg}\033[0m"
+    $cmd "${color}${msg}${CCLEAR}"
 }
 
 # ---------------------------------------------------------------------------
 # pre-defined colored message functions
 # For example, to print a standard log message in red:
 #
-# For ANSI codes see: https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
-#
 #   _say_danger [-n] message
 #
 # See _say usage for -n
 # ---------------------------------------------------------------------------
 _say_danger() {
-    _say_color "$@" '0;31m'  # red
+    _say_color "$@" $CRED
 }
 _say_warning() {
-    _say_color "$@" '1;33m'  # yellow
+    _say_color "$@" $CYELLOW
 }
 _say_comment() {
-    _say_color "$@" '0;33m'  # brown
+    _say_color "$@" $CBROWN
 }
 _say_success() {
-    _say_color "$@" '0;32m'  # green
+    _say_color "$@" $CGREEN
 }
 _say_info() {
-    _say_color "$@" '0;36m'  # cyan
+    _say_color "$@" $CCYAN
 }
 
 # ---------------------------------------------------------------------------
