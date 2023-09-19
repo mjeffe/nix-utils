@@ -24,8 +24,7 @@ from (
         routine_schema as schema_name,
         routine_name as object_name,
         -- we don't distinguish between functions and procedures
-        'FUNCTION' as objecty_type
-        --coalesce(routine_type, 'FUNCTION') as object_type
+        'FUNCTION' as object_type
     from information_schema.routines
     where routine_schema not in ('information_schema', 'pg_catalog')
 ) a
