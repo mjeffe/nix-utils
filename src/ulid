@@ -1,0 +1,22 @@
+#!/usr/bin/env python
+
+import ulid
+import argparse
+
+def generate_ulids(count):
+    return [str(ulid.new()) for _ in range(count)]
+
+def main():
+    parser = argparse.ArgumentParser(description='Generate ULIDs.')
+    parser.add_argument('count', type=int, nargs='?', default=1, 
+                        help='Number of ULIDs to generate (default: 1)')
+
+    args = parser.parse_args()
+
+    ulids = generate_ulids(args.count)
+    for ulid_value in ulids:
+        print(ulid_value)
+
+if __name__ == '__main__':
+    main()
+
